@@ -252,9 +252,9 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   return (
     <div className="inspection-filter jimu-widget">
       <header className="inspection-filter__header">
-        <span className="inspection-filter__eyebrow">Consulta operacional</span>
-        <h2>Buscar inspección</h2>
-        <p>Seleccione un año completo o filtre por un folio específico.</p>
+        <span className="inspection-filter__eyebrow">Gestión de reportes operacionales</span>
+        <h2>F-MA-018-REPORTE DE TERRENO V2.2 OPERACIÓN</h2>
+        <p>Consulte registros por año o folio, genere los reportes para descarga y actualice automáticamente su copia en SharePoint.</p>
       </header>
 
       <form onSubmit={runQuery} className="inspection-filter__form">
