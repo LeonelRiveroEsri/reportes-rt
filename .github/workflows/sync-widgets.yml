@@ -1,0 +1,27 @@
+name: Publish widgets-only branch
+on:
+  push:
+    branches: [main] # ajusta si usas otra rama
+    paths:
+      - "client/your-extensions/widgets/**" # solo cuando cambie esa carpeta
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # necesario para push al mismo repo
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # imprescindible para subtree
+
+      - name: Split subtree
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git subtree split --prefix=client/your-extensions/widgets -b widgets-only
+
+      - name: Push branch widgets-only
+        run: |
+          git push -f origin widgets-only:widgets-only

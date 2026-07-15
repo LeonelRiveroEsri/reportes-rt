@@ -1,0 +1,5 @@
+{
+  "serviceUrl": "https://sig.aminerals.cl/server/rest/services/Hosted/FMA018RT18_V2_2_OPERACION/FeatureServer/0",
+  "reportSubmitUrl": "https://sig.aminerals.cl/vector/rest/services/CL_MLP_GMA_ReportesRT/GPServer/Generar%20reporte%20de%20terreno/submitJob",
+  "fallbackToken": "__EXB_FALLBACK_TOKEN__"
+}

@@ -1,0 +1,9 @@
+[build]
+  command = "python scripts/pack_netlify.py --widget reportes_rt"
+  publish = "public"
+
+[[headers]]
+  for = "/exb/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Cache-Control = "public, max-age=300"

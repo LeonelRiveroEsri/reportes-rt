@@ -1,0 +1,37 @@
+name: Build public (EXB widget)
+on:
+  push:
+    branches: [main]
+    paths:
+      - "client/your-extensions/**"
+      - "client/dist/widgets/**"
+      - "scripts/pack_netlify.py"
+      - ".github/workflows/build-public.yml"
+      - "!public/**"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build-public:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Build public
+        run: python scripts/pack_netlify.py --widget reportes_rt
+      - name: Commit public when changed
+        shell: bash
+        run: |
+          git add -A -f public
+          if git diff --cached --quiet; then
+            echo "No hay cambios en public."
+          else
+            git -c user.name="github-actions[bot]" \
+                -c user.email="github-actions[bot]@users.noreply.github.com" \
+                commit -m "ci: update public"
+            git push
+          fi

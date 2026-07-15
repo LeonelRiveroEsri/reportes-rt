@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Guía de uso — GP Tool Reportes de Terreno F-MA-018</title>
+  <style>
+    :root{--navy:#173b63;--blue:#2879a8;--cyan:#31a9b8;--pale:#eaf3f7;--ink:#24323d;--muted:#61717d;--line:#cbd8df;--ok:#17795b;--warn:#a86709;--paper:#fff;--bg:#edf2f5}
+    *{box-sizing:border-box} html{scroll-behavior:smooth}
+    body{margin:0;background:var(--bg);color:var(--ink);font-family:Arial,"Segoe UI",sans-serif;line-height:1.5}
+    a{color:#146a9d} code,kbd{font-family:Consolas,"Courier New",monospace}
+    .document{max-width:1120px;margin:24px auto;background:var(--paper);box-shadow:0 8px 28px #18364b24}
+    .cover{min-height:720px;padding:44px 58px 36px;position:relative;overflow:hidden;background:linear-gradient(145deg,#fff 0 62%,#e8f5f6 62% 100%)}
+    .cover:after{content:"";position:absolute;width:410px;height:410px;border:70px solid #2aa4b31a;border-radius:50%;right:-180px;bottom:-180px}
+    .brands{display:flex;align-items:center;justify-content:space-between;gap:30px}.brands img{max-height:65px;max-width:225px;object-fit:contain}
+    .eyebrow{margin-top:92px;color:var(--cyan);font-size:14px;font-weight:700;letter-spacing:2px;text-transform:uppercase}
+    h1{font-size:43px;line-height:1.08;margin:12px 0 18px;color:var(--navy);max-width:760px} .subtitle{font-size:20px;color:var(--muted);max-width:720px}
+    .id-box{margin-top:42px;border-left:6px solid var(--cyan);background:#fff;padding:16px 20px;box-shadow:0 3px 14px #173b6315;max-width:790px}
+    .id-box strong{display:block;color:var(--navy);font-size:13px;text-transform:uppercase;letter-spacing:.8px}.id-box code{display:block;margin-top:6px;font-size:17px;overflow-wrap:anywhere}
+    .cover-meta{position:absolute;left:58px;right:58px;bottom:38px;border-top:1px solid var(--line);padding-top:14px;display:flex;justify-content:space-between;color:var(--muted);font-size:12px}
+    main{padding:34px 58px 64px} nav{background:var(--navy);padding:14px 58px;display:flex;gap:20px;flex-wrap:wrap}nav a{color:#fff;text-decoration:none;font-size:13px}
+    section{margin:0 0 42px;scroll-margin-top:20px} h2{color:var(--navy);font-size:25px;margin:0 0 17px;padding-bottom:8px;border-bottom:2px solid var(--cyan)}h3{color:var(--navy);font-size:18px;margin:25px 0 10px}h4{margin:16px 0 6px;color:#35556e}
+    .lead{font-size:17px;color:#3c4f5d}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.card{border:1px solid var(--line);border-top:4px solid var(--cyan);padding:16px;background:#fff}.card .label{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);font-weight:bold}.card .value{margin-top:6px;color:var(--navy);font-weight:bold;overflow-wrap:anywhere}.card small{display:block;margin-top:5px;color:var(--muted)}
+    table{border-collapse:collapse;width:100%;margin:12px 0 20px;font-size:13.5px}th{background:var(--navy);color:white;text-align:left;padding:10px;border:1px solid var(--navy)}td{padding:10px;border:1px solid var(--line);vertical-align:top}tr:nth-child(even) td{background:#f8fafb}
+    .badge{display:inline-block;border-radius:20px;padding:3px 9px;font-size:11px;font-weight:bold}.badge.ok{background:#e2f4ed;color:var(--ok)}.badge.info{background:#e4f1f8;color:#17678f}.badge.warn{background:#fff1da;color:var(--warn)}
+    .flow{display:grid;grid-template-columns:repeat(5,1fr);gap:22px;margin:20px 0}.step{position:relative;border:1px solid var(--line);background:#f9fbfc;padding:14px 11px;text-align:center;min-height:92px}.step:not(:last-child):after{content:"›";position:absolute;right:-18px;top:29px;color:var(--cyan);font-size:30px;font-weight:bold}.step b{display:block;color:var(--navy);font-size:13px}.step span{display:block;color:var(--muted);font-size:11px;margin-top:5px}
+    .callout{border-left:5px solid var(--blue);background:var(--pale);padding:14px 17px;margin:16px 0}.callout.warn{border-color:#e2a13a;background:#fff8e9}.callout.ok{border-color:#2d9a75;background:#edf8f4}.callout strong{color:var(--navy)}
+    pre{margin:10px 0 20px;background:#152938;color:#e9f4f7;border-radius:4px;padding:17px;overflow:auto;font-size:12.5px;line-height:1.55;white-space:pre-wrap}.endpoint{overflow-wrap:anywhere;color:#155f89;font-family:Consolas,monospace;font-size:12px}.two{display:grid;grid-template-columns:1fr 1fr;gap:20px}.checklist{list-style:none;padding:0}.checklist li{padding:7px 0 7px 28px;position:relative;border-bottom:1px dotted var(--line)}.checklist li:before{content:"✓";position:absolute;left:3px;color:var(--ok);font-weight:bold}
+    .footer{background:#f5f8fa;border-top:1px solid var(--line);padding:20px 58px;color:var(--muted);font-size:11px;display:flex;justify-content:space-between}
+    @media(max-width:800px){.document{margin:0}.cover,main{padding-left:24px;padding-right:24px}.cover-meta{left:24px;right:24px}.grid,.two,.flow{grid-template-columns:1fr}.step:not(:last-child):after{content:"↓";right:auto;left:50%;top:auto;bottom:-24px}nav{padding:13px 24px}.brands img{max-width:150px}h1{font-size:34px}}
+    @media print{@page{size:A4;margin:14mm}body{background:#fff}.document{max-width:none;margin:0;box-shadow:none}.cover{min-height:255mm;page-break-after:always}.cover-meta{bottom:18mm}nav{display:none}main{padding:0}.grid{grid-template-columns:repeat(3,1fr)}.flow{grid-template-columns:repeat(5,1fr)}.two{grid-template-columns:1fr 1fr}section{break-inside:auto}table,.card,.callout,pre{break-inside:avoid}a{color:inherit;text-decoration:none}.footer{padding:10px 0}}
+  </style>
+</head>
+<body>
+<article class="document">
+  <header class="cover">
+    <div class="brands"><img src="assets/logo_2.jpg" alt="Los Pelambres"><img src="assets/logo_1.png" alt="Gerencia Medio Ambiente"></div>
+    <div class="eyebrow">Manual técnico y operativo</div>
+    <h1>Generación de Reportes de Terreno F-MA-018</h1>
+    <p class="subtitle">Guía profesional de uso, integración y operación de la Python Toolbox y su servicio de geoprocesamiento publicado en ArcGIS Enterprise.</p>
+    <div class="id-box"><strong>Portal Item ID publicado</strong><code>cc751096a5414ee28e3069ed466ee629</code></div>
+    <div class="cover-meta"><span>CL_MLP_GMA_ReportesRT</span><span>Versión del documento 1.0 · 15 de julio de 2026</span></div>
+  </header>
+
+  <nav><a href="#resumen">Resumen</a><a href="#servicio">Servicio</a><a href="#modos">Modos de uso</a><a href="#rest">API REST</a><a href="#salidas">Salidas</a><a href="#operacion">Operación</a><a href="#problemas">Diagnóstico</a></nav>
+
+  <main>
+    <section id="resumen">
+      <h2>1. Resumen ejecutivo</h2>
+      <p class="lead">La solución genera el formulario corporativo <strong>F-MA-018 — Reporte de Terreno Operacional</strong> en PDF a partir de un registro de Survey123/Feature Service. Integra datos principales, relaciones, acciones, cierres, mapas e imágenes; entrega el PDF descargable y solicita su almacenamiento en SharePoint mediante Power Automate.</p>
+      <div class="grid">
+        <div class="card"><div class="label">Herramienta</div><div class="value">Generar reporte de terreno</div><small>Python Toolbox / GP Service</small></div>
+        <div class="card"><div class="label">Ejecución</div><div class="value">Asíncrona</div><small>Envío, seguimiento del job y consulta de resultados</small></div>
+        <div class="card"><div class="label">Resultado</div><div class="value">PDF + URL SharePoint</div><small>Dos parámetros derivados de salida</small></div>
+      </div>
+      <div class="flow">
+        <div class="step"><b>1. Solicitud</b><span>ObjectID manual o activación automática</span></div>
+        <div class="step"><b>2. Consulta</b><span>Registro, relaciones y adjuntos</span></div>
+        <div class="step"><b>3. Composición</b><span>ReportLab, mapas, fotos y paginación</span></div>
+        <div class="step"><b>4. Entrega</b><span>PDF en el directorio temporal del job</span></div>
+        <div class="step"><b>5. Publicación</b><span>Power Automate y SharePoint</span></div>
+      </div>
+    </section>
+
+    <section id="servicio">
+      <h2>2. Identificación del servicio publicado</h2>
+      <table>
+        <tr><th style="width:28%">Propiedad</th><th>Valor verificado</th></tr>
+        <tr><td>Nombre del elemento</td><td>CL_MLP_GMA_ReportesRT</td></tr>
+        <tr><td>Tipo</td><td>Geoprocessing Service</td></tr>
+        <tr><td>Portal Item ID</td><td><code>cc751096a5414ee28e3069ed466ee629</code></td></tr>
+        <tr><td>Propietario</td><td>Configurado mediante AMSA_PORTAL_USER</td></tr>
+        <tr><td>Acceso</td><td><span class="badge warn">Privado</span> Requiere usuario autorizado o token válido.</td></tr>
+        <tr><td>ArcGIS Server</td><td>11.1 · ejecución asíncrona</td></tr>
+        <tr><td>Creación</td><td>14/07/2026 11:50 (America/Santiago)</td></tr>
+        <tr><td>Última modificación verificada</td><td>15/07/2026 13:18 (America/Santiago)</td></tr>
+      </table>
+      <h3>Direcciones operativas</h3>
+      <p><strong>Elemento de Portal</strong><br><span class="endpoint">https://sig.aminerals.cl/portal/home/item.html?id=cc751096a5414ee28e3069ed466ee629</span></p>
+      <p><strong>Servicio GPServer</strong><br><span class="endpoint">https://sig.aminerals.cl/vector/rest/services/CL_MLP_GMA_ReportesRT/GPServer</span></p>
+      <p><strong>Tarea REST</strong><br><span class="endpoint">https://sig.aminerals.cl/vector/rest/services/CL_MLP_GMA_ReportesRT/GPServer/Generar%20reporte%20de%20terreno</span></p>
+    </section>
+
+    <section>
+      <h2>3. Parámetros de la herramienta</h2>
+      <table>
+        <tr><th>Nombre REST</th><th>Dirección</th><th>Tipo</th><th>Obligatorio</th><th>Descripción</th></tr>
+        <tr><td><code>object_id</code></td><td>Entrada</td><td>GPString</td><td>No</td><td>ObjectID del registro principal. Informarlo para uso manual; dejarlo vacío para el modo automático.</td></tr>
+        <tr><td><code>output_pdf</code></td><td>Salida</td><td>GPDataFile</td><td>Derivado</td><td>Archivo PDF generado y descargable desde el resultado del job.</td></tr>
+        <tr><td><code>sharepoint_url</code></td><td>Salida</td><td>GPString</td><td>Derivado</td><td>URL de destino del archivo en SharePoint.</td></tr>
+      </table>
+      <div class="callout"><strong>Importante:</strong> el parámetro ObjectID es texto para facilitar su consumo desde widgets y webhooks, pero su contenido debe representar un identificador entero válido cuando se utiliza el modo manual.</div>
+    </section>
+
+    <section id="modos">
+      <h2>4. Modos de ejecución</h2>
+      <div class="two">
+        <div class="card"><div class="label">Modo manual</div><div class="value">ObjectID informado</div><p>Recomendado para ArcGIS Pro, widgets y solicitudes directas. La herramienta consulta exactamente el registro indicado, genera el PDF, intenta publicarlo en SharePoint y devuelve ambas salidas.</p></div>
+        <div class="card"><div class="label">Modo automático</div><div class="value">ObjectID vacío</div><p>Diseñado para Survey123/webhooks. Selecciona el registro con <code>last_edited_date</code> más reciente y sólo lo procesa si pertenece a la ventana temporal configurada.</p></div>
+      </div>
+      <h3>Ventana temporal del modo automático</h3>
+      <p>La comparación se realiza con marcas de tiempo Unix en milisegundos, en UTC. Por ello no se resta manualmente la diferencia horaria de Chile ni se depende de la zona horaria configurada en ArcGIS Server. El valor predeterminado es de <strong>15 minutos</strong> y puede ajustarse con <code>RT_AUTO_LOOKBACK_MINUTES</code>.</p>
+      <div class="callout ok"><strong>Sin registros recientes:</strong> es una ejecución correcta sin trabajo pendiente. La herramienta informa la situación, deja vacíos <code>output_pdf</code> y <code>sharepoint_url</code>, y no marca el job como fallido.</div>
+      <div class="callout warn"><strong>Concurrencia:</strong> el modo automático selecciona la última edición global. Si se reciben varias encuestas casi simultáneas, la integración debe ejecutar el job inmediatamente y monitorear duplicados. Cuando el sistema llamador conoce el ObjectID, el modo manual es determinista y preferible.</div>
+    </section>
+
+    <section id="rest">
+      <h2>5. Consumo mediante ArcGIS REST API</h2>
+      <p>Al ser un servicio asíncrono, el cliente debe enviar un job, consultar su estado y finalmente recuperar cada salida. Los ejemplos omiten credenciales deliberadamente.</p>
+      <h3>5.1 Enviar un reporte manual</h3>
+      <pre>POST {TASK_URL}/submitJob
+Content-Type: application/x-www-form-urlencoded
+
+f=json
+token=&lt;TOKEN_PORTAL&gt;
+object_id=2174</pre>
+      <h3>5.2 Activar el modo automático</h3>
+      <pre>POST {TASK_URL}/submitJob
+Content-Type: application/x-www-form-urlencoded
+
+f=json
+token=&lt;TOKEN_PORTAL&gt;
+# object_id se omite o se envía vacío</pre>
+      <h3>5.3 Ejemplo Python</h3>
+      <pre>import time
+import requests
+
+TASK_URL = (
+    "https://sig.aminerals.cl/vector/rest/services/"
+    "CL_MLP_GMA_ReportesRT/GPServer/Generar%20reporte%20de%20terreno"
+)
+token = "&lt;TOKEN_PORTAL&gt;"
+
+# Para modo automático, eliminar object_id o asignar una cadena vacía.
+job = requests.post(
+    f"{TASK_URL}/submitJob",
+    data={"f": "json", "token": token, "object_id": "2174"},
+    timeout=60,
+).json()
+job_id = job["jobId"]
+
+while True:
+    status = requests.get(
+        f"{TASK_URL}/jobs/{job_id}",
+        params={"f": "json", "token": token}, timeout=30,
+    ).json()
+    if status["jobStatus"] in {"esriJobSucceeded", "esriJobFailed", "esriJobCancelled"}:
+        break
+    time.sleep(2)
+
+if status["jobStatus"] != "esriJobSucceeded":
+    raise RuntimeError(status.get("messages", status))
+
+pdf_result = requests.get(
+    f"{TASK_URL}/jobs/{job_id}/results/output_pdf",
+    params={"f": "json", "token": token}, timeout=30,
+).json()
+sp_result = requests.get(
+    f"{TASK_URL}/jobs/{job_id}/results/sharepoint_url",
+    params={"f": "json", "token": token}, timeout=30,
+).json()
+
+print(pdf_result)  # URL temporal de descarga
+print(sp_result)   # URL del archivo en SharePoint</pre>
+      <div class="callout"><strong>Descarga:</strong> la URL del GPDataFile puede requerir el mismo token. El cliente debe descargarla mientras el resultado del job siga disponible según la política de limpieza de ArcGIS Server.</div>
+    </section>
+
+    <section id="salidas">
+      <h2>6. Contenido y salidas del reporte</h2>
+      <p>La composición recorre la estructura relacional del levantamiento: registro principal → instalaciones o áreas → acciones → cierres de acción, además del cierre general. Los mapas quedan centrados, las tablas comparten el ancho del bloque de imágenes y las fotografías se distribuyen en una cuadrícula adaptable.</p>
+      <table>
+        <tr><th>Salida</th><th>Comportamiento</th><th>Uso recomendado</th></tr>
+        <tr><td>PDF del job</td><td>Se genera en el directorio temporal administrado por ArcGIS Server.</td><td>Descarga directa desde widget, ArcGIS Pro o consumidor REST.</td></tr>
+        <tr><td>URL SharePoint</td><td>Se calcula y retorna como salida aun cuando Power Automate no pueda confirmar una sobrescritura.</td><td>Navegación al repositorio documental y almacenamiento del enlace.</td></tr>
+      </table>
+      <h3>Clasificación de destino en SharePoint</h3>
+      <ul>
+        <li><strong>Reporte cerrado:</strong> carpeta base de Reportes de Terreno.</li>
+        <li><strong>Reporte en proceso:</strong> subcarpeta <em>En Tratamiento</em>.</li>
+      </ul>
+      <p>Sitio base: <code>https://aminerals.sharepoint.com/sites/SIG_AMSA/MLP/GMA</code>.</p>
+      <div class="callout warn"><strong>Semántica de la URL:</strong> la salida representa el destino esperado. Una URL informada no sustituye la confirmación del flujo cuando SharePoint rechaza o demora una sobrescritura. Para trazabilidad, conservar la respuesta de Power Automate y el Job ID.</div>
+    </section>
+
+    <section id="operacion">
+      <h2>7. Arquitectura, recursos y configuración</h2>
+      <table>
+        <tr><th>Componente</th><th>Responsabilidad</th></tr>
+        <tr><td><code>ReportesTerreno.pyt</code></td><td>Define parámetros GP, mensajes, salidas y coordinación de la ejecución.</td></tr>
+        <tr><td><code>reportlab_rt.py</code></td><td>Consulta datos, relaciones y adjuntos; construye mapas y genera el PDF.</td></tr>
+        <tr><td><code>core/modules.py</code></td><td>Funciones auxiliares para consulta y comunicación con servicios.</td></tr>
+        <tr><td>Feature Service</td><td>Fuente de datos. Item ID <code>aa0a9bb3504b4916a61a12ca6a920739</code>.</td></tr>
+        <tr><td>Plantilla corporativa</td><td>Fuente administrada para recursos gráficos. Item ID <code>677ae2fd7beb48c7a9ab2ac65913f8e6</code>.</td></tr>
+        <tr><td>Power Automate</td><td>Recibe nombre, carpetas, tipo MIME y PDF codificado en Base64; publica en SharePoint.</td></tr>
+      </table>
+      <h3>Variables de entorno admitidas</h3>
+      <table>
+        <tr><th>Variable</th><th>Finalidad</th><th>Tratamiento</th></tr>
+        <tr><td><code>AMSA_PORTAL_URL</code></td><td>URL de ArcGIS Enterprise.</td><td>Configurar en el entorno del servicio.</td></tr>
+        <tr><td><code>AMSA_PORTAL_USER</code></td><td>Usuario técnico.</td><td>No registrar en logs ni documentación distribuida.</td></tr>
+        <tr><td><code>AMSA_PORTAL_PASSWORD</code></td><td>Secreto del usuario técnico.</td><td>Proteger con la administración de credenciales institucional.</td></tr>
+        <tr><td><code>POWER_AUTOMATE_RT_URL</code></td><td>Endpoint HTTP del flujo.</td><td>Tratar la firma de la URL como secreto.</td></tr>
+        <tr><td><code>RT_AUTO_LOOKBACK_MINUTES</code></td><td>Ventana de búsqueda automática.</td><td>Predeterminado: 15.</td></tr>
+      </table>
+      <h3>Conectividad requerida desde ArcGIS Server</h3>
+      <ul class="checklist">
+        <li>Portal y servicios federados de <code>sig.aminerals.cl</code>.</li>
+        <li>Servicio de mapas base utilizado para las ubicaciones.</li>
+        <li>Endpoint HTTPS de Power Automate.</li>
+        <li>SharePoint Online, a través del flujo configurado.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>8. Procedimiento de publicación y validación</h2>
+      <div class="two">
+        <div><h3>Antes de publicar</h3><ul class="checklist"><li>Validar la toolbox en el entorno Python de ArcGIS Pro.</li><li>Generar un PDF con ObjectID conocido.</li><li>Confirmar acceso al Feature Service, relaciones y adjuntos.</li><li>Verificar plantilla/logos y salida de mapas.</li><li>Probar Power Automate sin exponer su URL en mensajes.</li></ul></div>
+        <div><h3>Después de publicar</h3><ul class="checklist"><li>Confirmar que la tarea aparece como asíncrona.</li><li>Ejecutar modo manual y descargar <code>output_pdf</code>.</li><li>Validar <code>sharepoint_url</code> y existencia del archivo.</li><li>Ejecutar modo automático con una edición reciente.</li><li>Ejecutar nuevamente sin edición reciente y confirmar éxito sin salidas.</li></ul></div>
+      </div>
+      <div class="callout"><strong>Actualizaciones:</strong> cuando cambie código, dependencias o recursos, se debe sobrescribir el servicio, comprobar la fecha de modificación del Item y repetir las pruebas de aceptación. Mantener el mismo Item ID evita romper consumidores existentes.</div>
+    </section>
+
+    <section id="problemas">
+      <h2>9. Diagnóstico y solución de problemas</h2>
+      <table>
+        <tr><th>Síntoma</th><th>Causa probable</th><th>Acción</th></tr>
+        <tr><td>ERROR 000816: tool is not valid</td><td>Fallo de importación, recurso no consolidado o incompatibilidad del entorno del servidor.</td><td>Revisar logs de ArcGIS Server, imports al cargar la PYT y dependencias instaladas en la cuenta del servicio.</td></tr>
+        <tr><td>Job correcto, sin PDF</td><td>Modo automático sin edición dentro de la ventana.</td><td>Comportamiento esperado. Revisar mensajes; no tratarlo como incidente.</td></tr>
+        <tr><td>Reporte sin cabecera o logos</td><td>El recurso corporativo no está accesible o no fue incluido en la publicación.</td><td>Comprobar Item de plantilla, permisos y descarga desde la cuenta de ArcGIS Server.</td></tr>
+        <tr><td>Mapa vacío o ausente</td><td>Bloqueo de salida HTTPS o respuesta del mapa base.</td><td>Validar conectividad, certificados, proxy y endpoint cartográfico.</td></tr>
+        <tr><td>PDF disponible, SharePoint no actualizado</td><td>Power Automate o SharePoint rechazó/demoró la carga o sobrescritura.</td><td>Conservar el PDF del job, revisar historial del flujo y usar la URL de salida como destino esperado.</td></tr>
+        <tr><td>Se procesa un registro inesperado</td><td>Modo automático activado después de otra edición más reciente.</td><td>Reducir latencia del webhook; usar ObjectID cuando esté disponible; auditar Job ID y fecha de edición.</td></tr>
+      </table>
+    </section>
+
+    <section>
+      <h2>10. Seguridad, auditoría y soporte</h2>
+      <ul class="checklist">
+        <li>Mantener el Item y el servicio compartidos únicamente con grupos o cuentas autorizadas.</li>
+        <li>No incluir tokens, contraseñas, URL firmada de Power Automate ni contenido Base64 en logs.</li>
+        <li>Registrar Job ID, ObjectID seleccionado, modo, nombre del PDF, duración y resultado del flujo.</li>
+        <li>Aplicar rotación de credenciales sin modificar consumidores del GP Service.</li>
+        <li>Monitorear espacio temporal, tiempos de generación, errores de adjuntos y fallos del flujo.</li>
+      </ul>
+      <p class="callout ok"><strong>Criterio de éxito:</strong> el job finaliza en <code>esriJobSucceeded</code>; para una solicitud con registro válido existe un PDF descargable, y la URL SharePoint se entrega como segunda salida. En modo automático sin novedades, el éxito se expresa mediante mensajes y salidas vacías.</p>
+    </section>
+  </main>
+  <footer class="footer"><span>F-MA-018 · Reportes de Terreno Operacional</span><span>Documento técnico de uso y operación · Item cc751096a5414ee28e3069ed466ee629</span></footer>
+</article>
+</body>
+</html>

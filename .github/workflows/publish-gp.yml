@@ -1,0 +1,33 @@
+name: Publish GP Tool
+on:
+  workflow_dispatch:
+    inputs:
+      object_id:
+        description: "ObjectID de validacion"
+        required: true
+      overwrite:
+        description: "Sobrescribir el servicio existente"
+        type: boolean
+        default: true
+jobs:
+  publish:
+    runs-on: [self-hosted, windows, arcgis-pro]
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish geoprocessing service
+        shell: powershell
+        env:
+          AMSA_PORTAL_URL: ${{ secrets.AMSA_PORTAL_URL }}
+          AMSA_PORTAL_USER: ${{ secrets.AMSA_PORTAL_USER }}
+          AMSA_PORTAL_PASSWORD: ${{ secrets.AMSA_PORTAL_PASSWORD }}
+          POWER_AUTOMATE_RT_URL: ${{ secrets.POWER_AUTOMATE_RT_URL }}
+          AGS_CONNECTION_FILE: ${{ secrets.AGS_CONNECTION_FILE }}
+        run: |
+          $arguments = @(
+            'scripts\publish_gp_tool.py',
+            '--connection', $env:AGS_CONNECTION_FILE,
+            '--object-id', '${{ inputs.object_id }}'
+          )
+          if ('${{ inputs.overwrite }}' -eq 'true') { $arguments += '--overwrite' }
+          & 'D:\Env\arcgis-pro\python.exe' @arguments
