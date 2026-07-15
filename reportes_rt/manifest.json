@@ -1,0 +1,19 @@
+{
+  "name": "reportes_rt",
+  "label": "Reportes RT",
+  "type": "widget",
+  "version": "1.10.0",
+  "exbVersion": "1.10.0",
+  "author": "AMS",
+  "description": "Filtro dinámico de inspecciones por folio, año y fecha.",
+  "copyright": "",
+  "license": "http://www.apache.org/licenses/LICENSE-2.0",
+  "properties": {},
+  "translatedLocales": [
+    "en"
+  ],
+  "defaultSize": {
+    "width": 800,
+    "height": 500
+  }
+}
