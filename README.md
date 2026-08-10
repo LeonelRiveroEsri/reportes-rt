@@ -1,13 +1,16 @@
 # reportes-rt
 
-Widget de ArcGIS Experience Builder y GP Tool para consultar inspecciones
-F-MA-018, generar el PDF de terreno y entregar enlaces al PDF y SharePoint.
+Widgets de ArcGIS Experience Builder y Python Toolboxes para consultar
+inspecciones F-MA-018, generar reportes y procesar archivos Excel.
 
 ## Estructura
 
 - `client/your-extensions/widgets/reportes_rt`: fuente React/TypeScript.
+- `client/your-extensions/widgets/procesador_excel`: carga XLSX con drag and drop.
 - `client/dist/widgets/reportes_rt`: bundle compilado.
+- `client/dist/widgets/procesador_excel`: bundle compilado para Netlify.
 - `gptools`: Python Toolbox, generador ReportLab y recursos.
+- `gptools/excel_processor_gp`: Python Toolbox que cuenta registros de un XLSX.
 - `scripts/pack_netlify.py`: genera `public/exb/widgets/reportes_rt`.
 - `scripts/publish_gp_tool.py`: publica la herramienta en ArcGIS Server.
 
@@ -18,6 +21,7 @@ Conecte este repositorio al sitio y configure la variable protegida
 
 ```text
 https://<sitio>.netlify.app/exb/widgets/reportes_rt/manifest.json
+https://<sitio>.netlify.app/exb/widgets/procesador_excel/manifest.json
 ```
 
 El workflow `build-public.yml` mantiene una copia navegable sin secretos.

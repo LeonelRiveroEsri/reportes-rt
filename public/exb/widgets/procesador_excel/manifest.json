@@ -1,0 +1,21 @@
+{
+  "name": "procesador_excel",
+  "label": "Procesador de Excel",
+  "type": "widget",
+  "version": "1.10.0",
+  "exbVersion": "1.10.0",
+  "author": "AMSA",
+  "description": "Carga y procesa archivos Excel mediante una herramienta de geoprocesamiento.",
+  "copyright": "",
+  "license": "http://www.apache.org/licenses/LICENSE-2.0",
+  "properties": {
+    "hasSettingPage": false
+  },
+  "translatedLocales": [
+    "en"
+  ],
+  "defaultSize": {
+    "width": 680,
+    "height": 620
+  }
+}
