@@ -133,15 +133,33 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
 
   const showFeatureSetOnMap = React.useCallback(async (featureSet: FeatureSetValue): Promise<string> => {
     if (!jimuMapView?.view?.map) return 'Resultado listo. Configure un Map Widget para visualizar los puntos.'
-    const [FeatureLayer, Graphic] = await loadArcGISJSAPIModules([
+    const [FeatureLayer, Graphic, Point] = await loadArcGISJSAPIModules([
       'esri/layers/FeatureLayer',
-      'esri/Graphic'
+      'esri/Graphic',
+      'esri/geometry/Point'
     ])
     if (resultLayerRef.current) jimuMapView.view.map.remove(resultLayerRef.current)
-    const graphics = (featureSet.features || []).map(feature => new Graphic({
-      geometry: feature.geometry,
-      attributes: feature.attributes
-    }))
+    const graphics = (featureSet.features || []).flatMap(feature => {
+      const geometry = feature.geometry as { x?: unknown, y?: unknown, z?: unknown, spatialReference?: unknown } | undefined
+      if (!geometry || geometry.x == null || geometry.y == null || geometry.x === '' || geometry.y === '') return []
+      const x = Number(geometry?.x)
+      const y = Number(geometry?.y)
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return []
+      const z = Number(geometry.z)
+      const point = new Point({
+        x,
+        y,
+        ...(Number.isFinite(z) ? { z } : {}),
+        spatialReference: geometry.spatialReference || featureSet.spatialReference
+      })
+      return [new Graphic({
+        geometry: point,
+        attributes: feature.attributes || {}
+      })]
+    })
+    if (graphics.length === 0) {
+      throw new Error('El servicio terminó correctamente, pero no devolvió geometrías de punto válidas.')
+    }
     const fields = (featureSet.fields || []).map(field => ({
       ...field,
       type: ARCGIS_FIELD_TYPES[field.type || ''] || field.type
@@ -181,8 +199,15 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     jimuMapView.view.map.add(layer)
     resultLayerRef.current = layer
     await layer.load()
-    if (layer.fullExtent) await jimuMapView.view.goTo(layer.fullExtent.expand(1.15))
-    return `${graphics.length} puntos agregados al mapa.`
+    const extent = layer.fullExtent
+    if (extent && Number.isFinite(extent.xmin) && Number.isFinite(extent.ymin) &&
+      Number.isFinite(extent.xmax) && Number.isFinite(extent.ymax)) {
+      await jimuMapView.view.goTo(extent.expand(1.15))
+    }
+    const discarded = (featureSet.features?.length || 0) - graphics.length
+    return discarded > 0
+      ? `${graphics.length} puntos agregados al mapa; ${discarded} geometrías inválidas fueron descartadas.`
+      : `${graphics.length} puntos agregados al mapa.`
   }, [jimuMapView])
 
   const validateAndSelect = (candidate?: File) => {
