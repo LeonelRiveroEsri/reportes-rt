@@ -204,11 +204,13 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
           .map(name => {
             const field = fields.find(candidate => candidate.name.toLowerCase() === name.toLowerCase())
             const numeric = ['double', 'single', 'integer', 'small-integer'].includes(field?.type || '')
+            const date = field?.type === 'date' || field?.type === 'date-only'
             return {
               fieldName: field?.name || name,
               label: field?.alias || name,
               visible: true,
-              ...(numeric ? { format: { digitSeparator: true, places: 2 } } : {})
+              ...(numeric ? { format: { digitSeparator: true, places: 2 } } : {}),
+              ...(date ? { format: { dateFormat: 'short-date' } } : {})
             }
           })
       }]
