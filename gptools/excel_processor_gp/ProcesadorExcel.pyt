@@ -51,10 +51,11 @@ class ProcesarExcel:
         output_features = arcpy.Parameter(
             displayName="Sondajes procesados",
             name="sondajes_procesados",
-            datatype="GPFeatureRecordSetLayer",
+            datatype="GPFeatureLayer",
             parameterType="Derived",
             direction="Output",
         )
+        output_features.schema.geometryType = "Point"
 
         record_count = arcpy.Parameter(
             displayName="Cantidad de registros",
@@ -130,14 +131,15 @@ class ProcesarExcel:
             arcpy.AddMessage(f"Transformación: {TRANSFORMATION} (WKID {TRANSFORMATION_WKID})")
             arcpy.AddMessage("Procesamiento finalizado correctamente.")
 
-            # GPFeatureRecordSetLayer debe recibir un FeatureSet real para que el
-            # servicio serialice fields, features, geometryType y spatialReference.
-            feature_set = arcpy.FeatureSet()
-            feature_set.load(output_features)
-            arcpy.SetParameter(1, feature_set)
-            arcpy.SetParameterAsText(2, str(len(data)))
-            arcpy.SetParameterAsText(3, result_message)
-            arcpy.SetParameterAsText(4, result_json)
+            # GPFeatureLayer requiere una capa real para que ArcGIS Pro la agregue
+            # al mapa. Al publicar, ArcGIS Server serializa esta salida espacial.
+            layer_result = arcpy.management.MakeFeatureLayer(
+                output_features, "Sondajes procesados"
+            )
+            parameters[1].value = layer_result.getOutput(0)
+            parameters[2].value = len(data)
+            parameters[3].value = result_message
+            parameters[4].value = result_json
             arcpy.SetProgressorLabel("Procesamiento completado.")
             arcpy.SetProgressorPosition()
         except Exception as exc:

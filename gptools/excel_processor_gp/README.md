@@ -25,7 +25,8 @@ Entrada:
 
 Salidas derivadas:
 
-- **Sondajes procesados** (`GPFeatureRecordSetLayer`), para agregar al mapa.
+- **Sondajes procesados** (`GPFeatureLayer`), capa derivada que ArcGIS Pro agrega
+  al mapa y ArcGIS Server entrega como resultado espacial al cliente web.
 - **Cantidad de registros** (`GPLong`).
 - **Mensaje de resultado** (`GPString`).
 - **Resumen JSON** (`GPString`), con nombre del archivo, hoja, filas, columnas y
