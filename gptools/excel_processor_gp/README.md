@@ -1,9 +1,10 @@
 # Procesador de archivos Excel
 
 Base de una herramienta de geoprocesamiento para ArcGIS Pro y ArcGIS Enterprise.
-La herramienta recibe un archivo `.xlsx`, carga su primera hoja con `pandas` y
-devuelve la cantidad de filas de datos. La fila de encabezados no se cuenta como
-registro.
+La herramienta recibe el libro maestro `.xlsx`, lee las hojas
+`ConsolidadoSND_MLP` y `AVANCE MUESTRERA`, crea puntos 3D, los reproyecta desde
+PSAD56 a WGS84 y devuelve un FeatureSet. No carga ni modifica una geodatabase de
+negocio.
 
 ## Archivos principales
 
@@ -19,6 +20,7 @@ Entrada:
 
 Salidas derivadas:
 
+- **Sondajes procesados** (`GPFeatureRecordSetLayer`), para agregar al mapa.
 - **Cantidad de registros** (`GPLong`).
 - **Mensaje de resultado** (`GPString`).
 - **Resumen JSON** (`GPString`), con nombre del archivo, hoja, filas, columnas y

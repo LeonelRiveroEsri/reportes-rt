@@ -1,5 +1,6 @@
 import { React } from 'jimu-core'
 import { AllWidgetSettingProps } from 'jimu-for-builder'
+import { MapWidgetSelector } from 'jimu-ui/advanced/setting-components'
 import { IMConfig } from '../config'
 import './style.scss'
 
@@ -17,8 +18,18 @@ const Setting = (props: AllWidgetSettingProps<IMConfig>) => {
     })
   }
 
+  const updateMap = (useMapWidgetIds: string[]) => {
+    props.onSettingChange({ id: props.id, useMapWidgetIds })
+  }
+
   return (
     <div className="excel-uploader-setting jimu-widget-setting">
+      <section>
+        <span className="excel-uploader-setting__eyebrow">Visualización</span>
+        <h3>Mapa de resultados</h3>
+        <p>Seleccione el Map Widget donde se agregarán los puntos procesados y sus ventanas emergentes.</p>
+        <MapWidgetSelector onSelect={updateMap} useMapWidgetIds={props.useMapWidgetIds} />
+      </section>
       <section>
         <span className="excel-uploader-setting__eyebrow">Servicio de geoprocesamiento</span>
         <h3>Configuración de la GP Tool</h3>

@@ -12,7 +12,14 @@ TOOLBOX_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 if TOOLBOX_DIRECTORY not in sys.path:
     sys.path.insert(0, TOOLBOX_DIRECTORY)
 
-from excel_processor import inspect_excel
+from excel_feature_builder import (
+    SOURCE_WKID,
+    TARGET_WKID,
+    TRANSFORMATION,
+    TRANSFORMATION_WKID,
+    build_feature_class,
+    read_master_workbook,
+)
 
 
 class Toolbox:
@@ -26,8 +33,8 @@ class ProcesarExcel:
     def __init__(self):
         self.label = "Procesar archivo Excel"
         self.description = (
-            "Carga la primera hoja de un archivo XLSX con pandas y devuelve "
-            "la cantidad de registros junto con un resumen JSON."
+            "Lee el libro maestro de sondajes, normaliza sus hojas y devuelve "
+            "un FeatureSet de puntos WGS84 sin modificar una geodatabase de negocio."
         )
         self.canRunInBackground = False
 
@@ -40,6 +47,14 @@ class ProcesarExcel:
             direction="Input",
         )
         input_excel.filter.list = ["xlsx"]
+
+        output_features = arcpy.Parameter(
+            displayName="Sondajes procesados",
+            name="sondajes_procesados",
+            datatype="GPFeatureRecordSetLayer",
+            parameterType="Derived",
+            direction="Output",
+        )
 
         record_count = arcpy.Parameter(
             displayName="Cantidad de registros",
@@ -65,7 +80,7 @@ class ProcesarExcel:
             direction="Output",
         )
 
-        return [input_excel, record_count, status_message, result_json]
+        return [input_excel, output_features, record_count, status_message, result_json]
 
     def isLicensed(self):
         return True
@@ -87,28 +102,38 @@ class ProcesarExcel:
             arcpy.SetProgressorLabel("Validando archivo de entrada...")
             arcpy.SetProgressorPosition()
 
-            arcpy.AddMessage("Cargando archivo con pandas...")
-            arcpy.SetProgressorLabel("Cargando primera hoja del archivo...")
-            summary = inspect_excel(input_path)
+            arcpy.AddMessage("Leyendo hojas ConsolidadoSND_MLP y AVANCE MUESTRERA...")
+            arcpy.SetProgressorLabel("Normalizando el libro maestro...")
+            data, metrics = read_master_workbook(input_path)
             arcpy.SetProgressorPosition()
 
             result_message = (
-                f"Archivo cargado correctamente. Se encontraron "
-                f"{summary.row_count} registros en la hoja '{summary.sheet_name}'."
+                f"Libro procesado correctamente. Se generaron {len(data)} puntos "
+                f"en WGS 84 / UTM 19S."
             )
-            result_json = json.dumps(
-                summary.to_dict(), ensure_ascii=False, separators=(",", ":")
-            )
+            arcpy.AddMessage("Creando puntos PSAD56 y ejecutando Project...")
+            output_workspace = arcpy.env.scratchGDB
+            output_features = build_feature_class(data, output_workspace)
+            result = {
+                "archivo": os.path.basename(input_path),
+                "registros": len(data),
+                "metricas": metrics,
+                "wkid_origen": SOURCE_WKID,
+                "wkid_destino": TARGET_WKID,
+                "transformacion": TRANSFORMATION,
+                "transformacion_wkid": TRANSFORMATION_WKID,
+            }
+            result_json = json.dumps(result, ensure_ascii=False, separators=(",", ":"))
 
-            arcpy.AddMessage(f"Archivo: {summary.file_name}")
-            arcpy.AddMessage(f"Hoja procesada: {summary.sheet_name}")
-            arcpy.AddMessage(f"Cantidad de columnas: {summary.column_count}")
-            arcpy.AddMessage(f"Cantidad de registros: {summary.row_count}")
+            arcpy.AddMessage(f"Archivo: {os.path.basename(input_path)}")
+            arcpy.AddMessage(f"Cantidad de sondajes: {len(data)}")
+            arcpy.AddMessage(f"Transformación: {TRANSFORMATION} (WKID {TRANSFORMATION_WKID})")
             arcpy.AddMessage("Procesamiento finalizado correctamente.")
 
-            arcpy.SetParameterAsText(1, str(summary.row_count))
-            arcpy.SetParameterAsText(2, result_message)
-            arcpy.SetParameterAsText(3, result_json)
+            arcpy.SetParameterAsText(1, output_features)
+            arcpy.SetParameterAsText(2, str(len(data)))
+            arcpy.SetParameterAsText(3, result_message)
+            arcpy.SetParameterAsText(4, result_json)
             arcpy.SetProgressorLabel("Procesamiento completado.")
             arcpy.SetProgressorPosition()
         except Exception as exc:

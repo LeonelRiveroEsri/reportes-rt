@@ -1,4 +1,5 @@
 import { React, AllWidgetProps, SessionManager } from 'jimu-core'
+import { JimuMapView, JimuMapViewComponent, loadArcGISJSAPIModules } from 'jimu-arcgis'
 import { IMConfig } from '../config'
 import './style.scss'
 
@@ -36,6 +37,15 @@ interface ProcessingResult {
   message?: string
   summary?: Record<string, unknown>
   raw: Record<string, unknown>
+  featureSet?: FeatureSetValue
+  mapMessage?: string
+}
+
+interface FeatureSetValue {
+  geometryType?: string
+  spatialReference?: Record<string, unknown>
+  fields?: Array<{ name: string, alias?: string, type?: string, length?: number }>
+  features?: Array<{ geometry?: Record<string, unknown>, attributes?: Record<string, unknown> }>
 }
 
 const DEFAULT_SUBMIT_URL = 'https://sig.aminerals.cl/vector/rest/services/ProcesarExcel/GPServer/Procesar%20archivo%20Excel/submitJob'
@@ -44,6 +54,8 @@ const wait = async (milliseconds: number) => await new Promise(resolve => setTim
 
 const Widget = (props: AllWidgetProps<IMConfig>) => {
   const inputRef = React.useRef<HTMLInputElement>(null)
+  const resultLayerRef = React.useRef<any>(null)
+  const [jimuMapView, setJimuMapView] = React.useState<JimuMapView>(null)
   const [file, setFile] = React.useState<File | null>(null)
   const [dragging, setDragging] = React.useState(false)
   const [stage, setStage] = React.useState<ProcessStage>('idle')
@@ -100,6 +112,57 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       return params
     })
   }, [requestForm])
+
+  const showFeatureSetOnMap = React.useCallback(async (featureSet: FeatureSetValue): Promise<string> => {
+    if (!jimuMapView?.view?.map) return 'Resultado listo. Configure un Map Widget para visualizar los puntos.'
+    const [FeatureLayer, Graphic] = await loadArcGISJSAPIModules([
+      'esri/layers/FeatureLayer',
+      'esri/Graphic'
+    ])
+    if (resultLayerRef.current) jimuMapView.view.map.remove(resultLayerRef.current)
+    const graphics = (featureSet.features || []).map(feature => new Graphic({
+      geometry: feature.geometry,
+      attributes: feature.attributes
+    }))
+    const fields = featureSet.fields || []
+    const objectIdField = fields.find(field => /oid/i.test(field.type || ''))?.name || 'OBJECTID'
+    const popupFields = [
+      'r_nomb_recom', 'r_nro_son', 'r_sector', 'r_estatus_perf',
+      'r_este', 'r_norte', 'r_cota', 'r_azimut', 'r_inclinacion',
+      'r_largo', 'r_avance_actual', 'r_avance', 'av_programa', 'av_sonda'
+    ]
+    const popupTemplate = {
+      title: 'Sondaje {r_nro_son}',
+      content: [{
+        type: 'fields',
+        fieldInfos: popupFields
+          .filter(name => fields.some(field => field.name.toLowerCase() === name.toLowerCase()))
+          .map(name => ({
+            fieldName: fields.find(field => field.name.toLowerCase() === name.toLowerCase())?.name || name,
+            label: fields.find(field => field.name.toLowerCase() === name.toLowerCase())?.alias || name,
+            visible: true
+          }))
+      }]
+    }
+    const layer = new FeatureLayer({
+      title: 'Sondajes procesados',
+      source: graphics,
+      fields,
+      objectIdField,
+      geometryType: 'point',
+      spatialReference: featureSet.spatialReference,
+      popupTemplate,
+      renderer: {
+        type: 'simple',
+        symbol: { type: 'simple-marker', style: 'circle', color: '#007f86', size: 9, outline: { color: '#fff', width: 1.2 } }
+      }
+    })
+    jimuMapView.view.map.add(layer)
+    resultLayerRef.current = layer
+    await layer.load()
+    if (layer.fullExtent) await jimuMapView.view.goTo(layer.fullExtent.expand(1.15))
+    return `${graphics.length} puntos agregados al mapa.`
+  }, [jimuMapView])
 
   const validateAndSelect = (candidate?: File) => {
     setError('')
@@ -168,12 +231,13 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       }
 
       setStatus('Recuperando resultados del procesamiento…')
-      const outputNames = ['cantidad_registros', 'mensaje_resultado', 'resumen_json']
+      const outputNames = ['sondajes_procesados', 'cantidad_registros', 'mensaje_resultado', 'resumen_json']
       const outputs = await Promise.all(outputNames.map(async name => {
         const output = await requestJson<ResultResponse>(`${taskUrl}/jobs/${encodeURIComponent(submitted.jobId)}/results/${name}`)
         return [name, output.value] as [string, unknown]
       }))
       const raw = Object.fromEntries(outputs)
+      const featureSet = raw.sondajes_procesados as FeatureSetValue
       let summary: Record<string, unknown> | undefined
       if (typeof raw.resumen_json === 'string') {
         try { summary = JSON.parse(raw.resumen_json) as Record<string, unknown> } catch (_) { /* Se conserva el valor original. */ }
@@ -185,8 +249,12 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
         recordCount: Number.isFinite(recordCount) ? recordCount : undefined,
         message: typeof raw.mensaje_resultado === 'string' ? raw.mensaje_resultado : undefined,
         summary,
-        raw
+        raw,
+        featureSet
       }
+      finalResult.mapMessage = featureSet?.features
+        ? await showFeatureSetOnMap(featureSet)
+        : 'El proceso terminó, pero no devolvió entidades para el mapa.'
       console.log('[Procesador de Excel] resultado:', finalResult)
       setResult(finalResult)
       setStage('success')
@@ -199,6 +267,10 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   }
 
   const reset = () => {
+    if (resultLayerRef.current && jimuMapView?.view?.map) {
+      jimuMapView.view.map.remove(resultLayerRef.current)
+      resultLayerRef.current = null
+    }
     setFile(null)
     setStage('idle')
     setStatus('Seleccione un archivo para comenzar.')
@@ -259,6 +331,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
             <span>Proceso completado</span>
             <h3>{result.recordCount !== undefined ? result.recordCount.toLocaleString('es-CL') : '—'} registros</h3>
             <p>{result.message || 'El archivo fue cargado y procesado correctamente.'}</p>
+            {result.mapMessage && <p className="excel-uploader__map-message">{result.mapMessage}</p>}
           </div>
           {result.summary && <dl>
             <div><dt>Hoja</dt><dd>{String(result.summary.sheet_name || '—')}</dd></div>
@@ -276,6 +349,10 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       </main>
 
       <footer>La información se transmite de forma segura al servicio de geoprocesamiento AMSA.</footer>
+      {props.useMapWidgetIds?.[0] && <JimuMapViewComponent
+        useMapWidgetId={props.useMapWidgetIds[0]}
+        onActiveViewChange={setJimuMapView}
+      />}
     </div>
   )
 }
