@@ -1,6 +1,7 @@
 """Convierte el libro maestro de sondajes en una feature class temporal."""
 
 from pathlib import Path
+import re
 from typing import Dict, Tuple
 from uuid import uuid4
 
@@ -13,6 +14,9 @@ SOURCE_WKID = 24879
 TARGET_WKID = 32719
 TRANSFORMATION = "PSAD_1956_To_WGS_1984_16"
 TRANSFORMATION_WKID = 6972
+LOCAL_EAST_REGEX = re.compile(r"^\d{5}(?:\.\d+)?$")
+LOCAL_NORTH_REGEX = re.compile(r"^\d{5}(?:\.\d+)?$")
+ELEVATION_REGEX = re.compile(r"^\d{4}(?:\.\d+)?$")
 
 FIELD_DEFINITIONS = [
     ("r_nomb_recom", "TEXT", 255, "Recomendación"),
@@ -87,6 +91,17 @@ def _normalize_key(series: pd.Series) -> pd.Series:
     return series.astype("string").str.strip().str.upper().replace("", pd.NA)
 
 
+def _coordinate_text(value) -> str:
+    """Representa números de Excel sin notación científica para validarlos por regex."""
+    if pd.isna(value):
+        return ""
+    try:
+        number = float(value)
+        return f"{number:.10f}".rstrip("0").rstrip(".")
+    except (TypeError, ValueError):
+        return str(value).strip()
+
+
 def read_master_workbook(path: str) -> Tuple[pd.DataFrame, Dict[str, int]]:
     workbook = Path(path).expanduser().resolve()
     if not workbook.is_file() or workbook.suffix.lower() != ".xlsx":
@@ -114,6 +129,15 @@ def read_master_workbook(path: str) -> Tuple[pd.DataFrame, Dict[str, int]]:
         raise ValueError("La hoja AVANCE MUESTRERA contiene NRO_SON duplicado.")
 
     merged = consolidated.merge(advance, on="r_nro_son", how="left", validate="one_to_one")
+    # Valida el formato PSAD56 antes de convertir o completar falsos Este/Norte.
+    coordinate_format_ok = (
+        merged["r_este"].map(_coordinate_text).str.match(LOCAL_EAST_REGEX) &
+        merged["r_norte"].map(_coordinate_text).str.match(LOCAL_NORTH_REGEX) &
+        merged["r_cota"].map(_coordinate_text).str.match(ELEVATION_REGEX)
+    )
+    discarded_ids = merged.loc[~coordinate_format_ok, "r_nro_son"].astype(str).tolist()
+    merged = merged.loc[coordinate_format_ok].copy()
+
     for field in OUTPUT_FIELDS:
         if field not in merged:
             merged[field] = pd.NA
@@ -137,6 +161,8 @@ def read_master_workbook(path: str) -> Tuple[pd.DataFrame, Dict[str, int]]:
         "consolidado": len(consolidated),
         "avance": len(advance),
         "coincidencias_avance": int(merged["av_programa"].notna().sum()),
+        "descartados_geometria": len(discarded_ids),
+        "sondajes_descartados": discarded_ids,
     }
     return merged[OUTPUT_FIELDS].copy(), metrics
 

@@ -130,7 +130,11 @@ class ProcesarExcel:
             arcpy.AddMessage(f"Transformación: {TRANSFORMATION} (WKID {TRANSFORMATION_WKID})")
             arcpy.AddMessage("Procesamiento finalizado correctamente.")
 
-            arcpy.SetParameterAsText(1, output_features)
+            # GPFeatureRecordSetLayer debe recibir un FeatureSet real para que el
+            # servicio serialice fields, features, geometryType y spatialReference.
+            feature_set = arcpy.FeatureSet()
+            feature_set.load(output_features)
+            arcpy.SetParameter(1, feature_set)
             arcpy.SetParameterAsText(2, str(len(data)))
             arcpy.SetParameterAsText(3, result_message)
             arcpy.SetParameterAsText(4, result_json)

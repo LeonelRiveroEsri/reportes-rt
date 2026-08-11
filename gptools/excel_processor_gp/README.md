@@ -6,6 +6,11 @@ La herramienta recibe el libro maestro `.xlsx`, lee las hojas
 PSAD56 a WGS84 y devuelve un FeatureSet. No carga ni modifica una geodatabase de
 negocio.
 
+Antes de crear geometrías, valida las coordenadas PSAD56 por expresión regular:
+Este y Norte local deben tener cinco dígitos y Cota cuatro dígitos (con decimales
+opcionales). Las filas que no cumplan se descartan y se informan en el resumen
+JSON.
+
 ## Archivos principales
 
 - `ProcesadorExcel.pyt`: Python Toolbox que se agrega y ejecuta desde ArcGIS Pro.
