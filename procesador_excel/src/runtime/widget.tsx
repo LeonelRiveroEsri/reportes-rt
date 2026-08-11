@@ -66,6 +66,26 @@ const ARCGIS_FIELD_TYPES: Record<string, string> = {
   esriFieldTypeXML: 'xml'
 }
 
+const COLLAR_FIELD_ORDER = [
+  'r_nomb_recom', 'r_tiposondaje', 'r_nro_son', 'r_sector',
+  'r_este', 'r_norte', 'r_cota', 'r_azimut', 'r_inclinacion',
+  'r_largo', 'r_por_perforar', 'r_avance_actual', 'r_mts_faltantes',
+  'r_avance', 'r_estatus_perf', 'r_largo_final', 'r_cert_collar',
+  'r_observacion', 'q_des_campaña', 'q_año_sondaje', 'q_tipo_perf',
+  'q_estado_son', 'av_programa', 'av_sonda', 'av_largo_program',
+  'av_fondo_final', 'av_faltante_perf', 'av_pct_perforado', 'av_tricono',
+  'av_mts_fotografia', 'av_mts_corte', 'av_mts_mapeo',
+  'av_mts_preparacion', 'r_fch_inicio', 'r_fch_termino',
+  'av_fch_ini', 'av_fch_term'
+]
+
+const COLLAR_MISSING_FIELDS: Record<string, { alias: string, type: string }> = {
+  'q_des_campaña': { alias: 'Descripción de campaña', type: 'string' },
+  'q_año_sondaje': { alias: 'Año de sondaje', type: 'double' },
+  q_tipo_perf: { alias: 'Tipo de perforación', type: 'string' },
+  q_estado_son: { alias: 'Estado del sondaje', type: 'string' }
+}
+
 const DEFAULT_SUBMIT_URL = 'https://sig.aminerals.cl/vector/rest/services/ProcesarExcel/GPServer/Procesar%20archivo%20Excel/submitJob'
 const MAX_FILE_SIZE = 25 * 1024 * 1024
 const wait = async (milliseconds: number) => await new Promise(resolve => setTimeout(resolve, milliseconds))
@@ -164,23 +184,33 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       ...field,
       type: ARCGIS_FIELD_TYPES[field.type || ''] || field.type
     }))
+    const availableFieldNames = new Set(fields.map(field => field.name.toLowerCase()))
+    Object.entries(COLLAR_MISSING_FIELDS).forEach(([name, definition]) => {
+      if (!availableFieldNames.has(name.toLowerCase())) {
+        fields.push({
+          name,
+          alias: definition.alias,
+          type: definition.type
+        })
+      }
+    })
     const objectIdField = fields.find(field => /oid/i.test(field.type || ''))?.name || 'OBJECTID'
-    const popupFields = [
-      'r_nomb_recom', 'r_nro_son', 'r_sector', 'r_estatus_perf',
-      'r_este', 'r_norte', 'r_cota', 'r_azimut', 'r_inclinacion',
-      'r_largo', 'r_avance_actual', 'r_avance', 'av_programa', 'av_sonda'
-    ]
     const popupTemplate = {
       title: 'Sondaje {r_nro_son}',
       content: [{
         type: 'fields',
-        fieldInfos: popupFields
+        fieldInfos: COLLAR_FIELD_ORDER
           .filter(name => fields.some(field => field.name.toLowerCase() === name.toLowerCase()))
-          .map(name => ({
-            fieldName: fields.find(field => field.name.toLowerCase() === name.toLowerCase())?.name || name,
-            label: fields.find(field => field.name.toLowerCase() === name.toLowerCase())?.alias || name,
-            visible: true
-          }))
+          .map(name => {
+            const field = fields.find(candidate => candidate.name.toLowerCase() === name.toLowerCase())
+            const numeric = ['double', 'single', 'integer', 'small-integer'].includes(field?.type || '')
+            return {
+              fieldName: field?.name || name,
+              label: field?.alias || name,
+              visible: true,
+              ...(numeric ? { format: { digitSeparator: true, places: 2 } } : {})
+            }
+          })
       }]
     }
     const layer = new FeatureLayer({
