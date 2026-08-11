@@ -48,6 +48,24 @@ interface FeatureSetValue {
   features?: Array<{ geometry?: Record<string, unknown>, attributes?: Record<string, unknown> }>
 }
 
+const ARCGIS_FIELD_TYPES: Record<string, string> = {
+  esriFieldTypeOID: 'oid',
+  esriFieldTypeString: 'string',
+  esriFieldTypeDouble: 'double',
+  esriFieldTypeSingle: 'single',
+  esriFieldTypeInteger: 'integer',
+  esriFieldTypeSmallInteger: 'small-integer',
+  esriFieldTypeDate: 'date',
+  esriFieldTypeDateOnly: 'date-only',
+  esriFieldTypeTimeOnly: 'time-only',
+  esriFieldTypeTimestampOffset: 'timestamp-offset',
+  esriFieldTypeGlobalID: 'global-id',
+  esriFieldTypeGUID: 'guid',
+  esriFieldTypeBlob: 'blob',
+  esriFieldTypeRaster: 'raster',
+  esriFieldTypeXML: 'xml'
+}
+
 const DEFAULT_SUBMIT_URL = 'https://sig.aminerals.cl/vector/rest/services/ProcesarExcel/GPServer/Procesar%20archivo%20Excel/submitJob'
 const MAX_FILE_SIZE = 25 * 1024 * 1024
 const wait = async (milliseconds: number) => await new Promise(resolve => setTimeout(resolve, milliseconds))
@@ -124,7 +142,10 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       geometry: feature.geometry,
       attributes: feature.attributes
     }))
-    const fields = featureSet.fields || []
+    const fields = (featureSet.fields || []).map(field => ({
+      ...field,
+      type: ARCGIS_FIELD_TYPES[field.type || ''] || field.type
+    }))
     const objectIdField = fields.find(field => /oid/i.test(field.type || ''))?.name || 'OBJECTID'
     const popupFields = [
       'r_nomb_recom', 'r_nro_son', 'r_sector', 'r_estatus_perf',
@@ -260,9 +281,15 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       setStage('success')
       setStatus('Procesamiento completado correctamente.')
     } catch (processError) {
+      console.error('[Procesador de Excel] error:', processError)
+      const detail = processError && typeof processError === 'object' && 'message' in processError
+        ? String((processError as { message?: unknown }).message || '')
+        : ''
       setStage('error')
       setStatus('El archivo no pudo ser procesado.')
-      setError(processError instanceof Error ? processError.message : 'Ocurrió un error inesperado.')
+      setError(processError instanceof Error
+        ? processError.message
+        : detail || 'Ocurrió un error inesperado al crear la capa de resultados.')
     }
   }
 
