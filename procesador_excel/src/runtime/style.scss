@@ -27,11 +27,13 @@
     &.is-dragging { transform: scale(1.01); }
     &.has-file { border-style: solid; border-color: #72b7b8; }
   }
+  &__dropzone--coordinates { min-height: 165px; margin-top: 14px; }
   &__file-icon {
     display: grid; width: 54px; height: 62px; place-items: center; border-radius: 6px 13px 6px 6px;
     color: #fff; background: linear-gradient(145deg, #168f75, #08765f); box-shadow: 0 8px 18px rgba(20,108,91,.2);
     font-size: 24px; font-weight: 800;
   }
+  &__file-icon--csv { width: 62px; height: 48px; border-radius: 8px; background: linear-gradient(145deg, #267b92, #17566d); font-size: 15px; }
 
   &__progress { margin-top: 18px; padding: 15px 17px; border: 1px solid #dbe6ea; border-radius: 9px; background: #fff;
     > div:first-child { display: flex; justify-content: space-between; gap: 12px; color: #5f7584; font-size: 12px; }
