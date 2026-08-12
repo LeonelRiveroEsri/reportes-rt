@@ -61,6 +61,17 @@
   }
   &__map-message { margin-top: 5px !important; color: #007f86 !important; font-weight: 650; }
 
+  &__publish-option {
+    display: flex; gap: 12px; margin-top: 18px; padding: 14px 16px; align-items: flex-start;
+    border: 1px solid #c7d7de; border-radius: 9px; background: #fff; cursor: pointer;
+    transition: border-color .18s, background .18s, box-shadow .18s;
+    input { width: 18px; height: 18px; margin: 1px 0 0; flex: 0 0 auto; accent-color: var(--amsa-teal); }
+    span { display: flex; flex-direction: column; gap: 3px; }
+    strong { color: var(--amsa-dark); font-size: 13px; }
+    small { color: #6d8190; font-size: 11px; line-height: 1.4; }
+    &.is-selected { border-color: #65afb2; background: #f0fafa; box-shadow: 0 0 0 3px rgba(0,127,134,.08); }
+  }
+
   &__actions { display: flex; gap: 10px; margin-top: 20px;
     button { display: inline-flex; min-height: 43px; padding: 0 20px; align-items: center; justify-content: center; border: 1px solid #bdcbd3; border-radius: 7px; color: #435d6e; background: #fff; font-weight: 650; cursor: pointer; }
     button:disabled { opacity: .55; cursor: not-allowed; }
