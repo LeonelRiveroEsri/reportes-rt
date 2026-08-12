@@ -60,6 +60,11 @@
     p { margin: 0; color: #5f786f; font-size: 12px; }
   }
   &__map-message { margin-top: 5px !important; color: #007f86 !important; font-weight: 650; }
+  &__export {
+    margin-top: 11px; padding: 8px 14px; border: 1px solid var(--amsa-teal); border-radius: 6px;
+    color: var(--amsa-teal); background: #fff; font-size: 12px; font-weight: 700; cursor: pointer;
+    &:hover, &:focus { color: #fff; background: var(--amsa-teal); }
+  }
 
   &__publish-option {
     display: flex; gap: 12px; margin-top: 18px; padding: 14px 16px; align-items: flex-start;
