@@ -494,9 +494,9 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       }
 
       setStatus('Recuperando resultados del procesamiento…')
-      const outputNames = publishToGdb
-        ? ['cantidad_registros', 'mensaje_resultado', 'resumen_json']
-        : ['sondajes_procesados', 'cantidad_registros', 'mensaje_resultado', 'resumen_json']
+      // El FeatureSet se recupera siempre para permitir la exportación CSV.
+      // En modo GDB se conserva en memoria, pero no se dibuja en el mapa.
+      const outputNames = ['sondajes_procesados', 'cantidad_registros', 'mensaje_resultado', 'resumen_json']
       const outputs = await Promise.all(outputNames.map(async name => {
         const output = await requestJson<ResultResponse>(`${taskUrl}/jobs/${encodeURIComponent(submitted.jobId)}/results/${name}`)
         return [name, output.value] as [string, unknown]
@@ -537,6 +537,43 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
         ? processError.message
         : detail || 'Ocurrió un error inesperado al crear la capa de resultados.')
     }
+  }
+
+  const exportResultToCsv = () => {
+    const featureSet = result?.featureSet
+    const features = featureSet?.features || []
+    if (!features.length) return
+
+    const available = new Map((featureSet?.fields || []).map(field => [field.name.toLowerCase(), field]))
+    const fieldNames = COLLAR_FIELD_ORDER
+      .map(name => available.get(name.toLowerCase())?.name)
+      .filter((name): name is string => Boolean(name))
+    const escapeCsv = (value: unknown): string => {
+      if (value === null || value === undefined) return ''
+      const text = String(value).replace(/"/g, '""')
+      return /[;"\r\n]/.test(text) ? `"${text}"` : text
+    }
+    const formatValue = (fieldName: string, value: unknown): unknown => {
+      const field = available.get(fieldName.toLowerCase())
+      const isDate = field?.type === 'esriFieldTypeDate' || field?.type === 'date' || field?.type === 'date-only'
+      if (!isDate || value === null || value === undefined || value === '') return value
+      const date = new Date(typeof value === 'number' ? value : String(value))
+      return Number.isNaN(date.getTime())
+        ? value
+        : new Intl.DateTimeFormat('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date)
+    }
+    const headers = fieldNames.map(name => COLLAR_GDB_LABELS[name.toLowerCase()] || name.toUpperCase())
+    const rows = features.map(feature => fieldNames.map(name => escapeCsv(formatValue(name, feature.attributes?.[name]))).join(';'))
+    const csv = `\uFEFF${headers.map(escapeCsv).join(';')}\r\n${rows.join('\r\n')}`
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+    const link = document.createElement('a')
+    const baseName = (file?.name || 'sondajes_procesados').replace(/\.xlsx$/i, '')
+    link.href = url
+    link.download = `${baseName}_procesado.csv`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
   }
 
   const reset = () => {
@@ -631,6 +668,9 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
             <h3>{result.recordCount !== undefined ? result.recordCount.toLocaleString('es-CL') : '—'} registros</h3>
             <p>{result.message || 'El archivo fue cargado y procesado correctamente.'}</p>
             {result.mapMessage && <p className="excel-uploader__map-message">{result.mapMessage}</p>}
+            {result.featureSet?.features?.length > 0 && <button type="button" className="excel-uploader__export" onClick={exportResultToCsv}>
+              Exportar CSV
+            </button>}
           </div>
           {result.summary && <dl>
             <div><dt>Libro maestro</dt><dd>{String(result.summary.archivo || file?.name || '—')}</dd></div>
