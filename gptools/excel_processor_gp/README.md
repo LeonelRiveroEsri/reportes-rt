@@ -3,8 +3,8 @@
 Base de una herramienta de geoprocesamiento para ArcGIS Pro y ArcGIS Enterprise.
 La herramienta recibe el libro maestro `.xlsx`, lee las hojas
 `ConsolidadoSND_MLP` y `AVANCE MUESTRERA`, crea puntos 3D, los reproyecta desde
-PSAD56 a WGS84 y devuelve un FeatureSet. No carga ni modifica una geodatabase de
-negocio.
+PSAD56 a WGS84 y devuelve un FeatureSet. Opcionalmente puede reemplazar la
+feature class de negocio cuando se activa el parámetro de publicación.
 
 Antes de crear geometrías, valida las coordenadas PSAD56 por expresión regular:
 Este y Norte local deben tener cinco dígitos y Cota cuatro dígitos (con decimales
@@ -22,6 +22,13 @@ JSON.
 Entrada:
 
 - **Archivo Excel (.xlsx)**: archivo que se cargará y procesará.
+- **Publicar en Collar_Recomendado** (`GPBoolean`): `False` por defecto. Con
+  `True`, respalda y trunca el destino y carga geometrías y atributos mediante
+  `arcpy.da.InsertCursor` en
+  `\\amssclgis09.ams.gmams.cl\CL_VPD_DEMO\CL_MLP_GEO\02_FGDB\CL_VPD_GER_Plano_Sondajes_MLP.gdb\Collar_Recomendado`.
+  La ruta se comprueba solamente durante la ejecución. Si ArcGIS Server no
+  puede verla, se registra una advertencia y el job sigue devolviendo el layer
+  temporal.
 
 Salidas derivadas:
 

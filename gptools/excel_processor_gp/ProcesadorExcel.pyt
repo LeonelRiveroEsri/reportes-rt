@@ -19,6 +19,13 @@ from excel_feature_builder import (
     TRANSFORMATION_WKID,
     build_feature_class,
     read_master_workbook,
+    replace_target_with_cursor,
+)
+
+
+TARGET_FEATURE_CLASS = (
+    r"\\amssclgis09.ams.gmams.cl\CL_VPD_DEMO\CL_MLP_GEO\02_FGDB"
+    r"\CL_VPD_GER_Plano_Sondajes_MLP.gdb\Collar_Recomendado"
 )
 
 
@@ -34,7 +41,7 @@ class ProcesarExcel:
         self.label = "Procesar archivo Excel"
         self.description = (
             "Lee el libro maestro de sondajes, normaliza sus hojas y devuelve "
-            "un FeatureSet de puntos WGS84 sin modificar una geodatabase de negocio."
+            "un FeatureSet de puntos WGS84. Opcionalmente reemplaza Collar_Recomendado."
         )
         self.canRunInBackground = False
 
@@ -47,6 +54,15 @@ class ProcesarExcel:
             direction="Input",
         )
         input_excel.filter.list = ["xlsx"]
+
+        publish_to_gdb = arcpy.Parameter(
+            displayName="Publicar en Collar_Recomendado",
+            name="publicar_en_gdb",
+            datatype="GPBoolean",
+            parameterType="Optional",
+            direction="Input",
+        )
+        publish_to_gdb.value = False
 
         output_features = arcpy.Parameter(
             displayName="Sondajes procesados",
@@ -81,7 +97,7 @@ class ProcesarExcel:
             direction="Output",
         )
 
-        return [input_excel, output_features, record_count, status_message, result_json]
+        return [input_excel, publish_to_gdb, output_features, record_count, status_message, result_json]
 
     def isLicensed(self):
         return True
@@ -96,7 +112,8 @@ class ProcesarExcel:
 
     def execute(self, parameters, messages):
         input_path = parameters[0].valueAsText
-        arcpy.SetProgressor("step", "Preparando procesamiento...", 0, 3, 1)
+        publish_requested = str(parameters[1].valueAsText or "false").lower() == "true"
+        arcpy.SetProgressor("step", "Preparando procesamiento...", 0, 4, 1)
 
         try:
             arcpy.AddMessage("Procesando archivo Excel...")
@@ -115,6 +132,36 @@ class ProcesarExcel:
             arcpy.AddMessage("Creando puntos PSAD56 y ejecutando Project...")
             output_workspace = arcpy.env.scratchGDB
             output_features = build_feature_class(data, output_workspace)
+            publication = {
+                "solicitado": publish_requested,
+                "publicado": False,
+                "estado": "no_solicitado",
+                "destino": TARGET_FEATURE_CLASS,
+                "registros": 0,
+            }
+            if publish_requested:
+                arcpy.SetProgressorLabel("Actualizando Collar_Recomendado...")
+                try:
+                    publication = replace_target_with_cursor(output_features, TARGET_FEATURE_CLASS)
+                    if publication["publicado"]:
+                        arcpy.AddMessage(
+                            f"GDB actualizada: {publication['registros']} registros insertados."
+                        )
+                    else:
+                        arcpy.AddWarning(
+                            "No se encontró Collar_Recomendado desde la cuenta de ArcGIS Server. "
+                            "Se conserva el resultado temporal y el job continúa."
+                        )
+                except Exception as publication_error:
+                    publication.update({
+                        "estado": "error_publicacion",
+                        "error": str(publication_error),
+                    })
+                    arcpy.AddWarning(
+                        f"No fue posible actualizar la GDB: {publication_error}. "
+                        "El layer temporal se devolverá normalmente."
+                    )
+            arcpy.SetProgressorPosition()
             result = {
                 "archivo": os.path.basename(input_path),
                 "registros": len(data),
@@ -123,6 +170,7 @@ class ProcesarExcel:
                 "wkid_destino": TARGET_WKID,
                 "transformacion": TRANSFORMATION,
                 "transformacion_wkid": TRANSFORMATION_WKID,
+                "publicacion_gdb": publication,
             }
             result_json = json.dumps(result, ensure_ascii=False, separators=(",", ":"))
 
@@ -136,10 +184,10 @@ class ProcesarExcel:
             layer_result = arcpy.management.MakeFeatureLayer(
                 output_features, "Sondajes procesados"
             )
-            parameters[1].value = layer_result.getOutput(0)
-            parameters[2].value = len(data)
-            parameters[3].value = result_message
-            parameters[4].value = result_json
+            parameters[2].value = layer_result.getOutput(0)
+            parameters[3].value = len(data)
+            parameters[4].value = result_message
+            parameters[5].value = result_json
             arcpy.SetProgressorLabel("Procesamiento completado.")
             arcpy.SetProgressorPosition()
         except Exception as exc:

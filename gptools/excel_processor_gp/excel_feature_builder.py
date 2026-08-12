@@ -216,3 +216,62 @@ def build_feature_class(data: pd.DataFrame, output_workspace: str) -> str:
             cursor.updateRow([xyz[0], xyz[1], xyz[2], xyz])
     arcpy.management.Delete(psad_fc)
     return output_fc
+
+
+def replace_target_with_cursor(source_features: str, target_features: str) -> Dict[str, object]:
+    """Reemplaza el destino con cursores y restaura el respaldo ante una falla."""
+    result = {
+        "solicitado": True,
+        "publicado": False,
+        "estado": "destino_no_disponible",
+        "destino": target_features,
+        "registros": 0,
+    }
+    if not arcpy.Exists(target_features):
+        return result
+
+    description = arcpy.Describe(target_features)
+    if description.shapeType.lower() != "point":
+        raise ValueError("La feature class de destino no es de tipo punto.")
+    if description.spatialReference.factoryCode != TARGET_WKID:
+        raise ValueError(
+            f"La feature class de destino usa WKID "
+            f"{description.spatialReference.factoryCode}; se esperaba {TARGET_WKID}."
+        )
+
+    target_names = {field.name.lower() for field in arcpy.ListFields(target_features)}
+    missing = [field for field in OUTPUT_FIELDS if field.lower() not in target_names]
+    if missing:
+        raise ValueError(f"La feature class de destino no contiene: {', '.join(missing)}")
+
+    backup = str(Path(arcpy.env.scratchGDB) / f"collar_backup_{uuid4().hex[:10]}")
+    cursor_fields = ["SHAPE@"] + OUTPUT_FIELDS
+    arcpy.management.CopyFeatures(target_features, backup)
+    inserted = 0
+    try:
+        arcpy.management.TruncateTable(target_features)
+        with arcpy.da.SearchCursor(source_features, cursor_fields) as rows:
+            with arcpy.da.InsertCursor(target_features, cursor_fields) as writer:
+                for row in rows:
+                    writer.insertRow(row)
+                    inserted += 1
+
+        expected = int(arcpy.management.GetCount(source_features)[0])
+        final_count = int(arcpy.management.GetCount(target_features)[0])
+        if inserted != expected or final_count != expected:
+            raise RuntimeError(
+                f"Validación de carga fallida: origen={expected}, insertados={inserted}, "
+                f"destino={final_count}."
+            )
+        result.update({"publicado": True, "estado": "publicado", "registros": final_count})
+        return result
+    except Exception:
+        arcpy.management.TruncateTable(target_features)
+        with arcpy.da.SearchCursor(backup, cursor_fields) as rows:
+            with arcpy.da.InsertCursor(target_features, cursor_fields) as writer:
+                for row in rows:
+                    writer.insertRow(row)
+        raise
+    finally:
+        if arcpy.Exists(backup):
+            arcpy.management.Delete(backup)
