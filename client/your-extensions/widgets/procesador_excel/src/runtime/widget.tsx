@@ -322,7 +322,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
             const date = field?.type === 'date' || field?.type === 'date-only'
             return {
               fieldName: field?.name || name,
-              label: field?.alias || name,
+              label: field?.name || name,
               visible: true,
               ...(numeric ? { format: { digitSeparator: true, places: 2 } } : {}),
               ...(date ? { format: { dateFormat: 'short-date' } } : {})
