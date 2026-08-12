@@ -173,7 +173,10 @@ def read_master_workbook(path: str) -> Tuple[pd.DataFrame, Dict[str, int]]:
 
 def _add_output_fields(feature_class: str) -> None:
     for name, kind, length, alias in FIELD_DEFINITIONS:
-        kwargs = {"field_alias": alias}
+        # Conserva en la salida temporal los mismos alias físicos de
+        # Collar_Recomendado para que Pro y Experience Builder se vean iguales.
+        target_alias = name if name.startswith(("r_fch_", "av_fch_")) else name.upper()
+        kwargs = {"field_alias": target_alias}
         if length:
             kwargs["field_length"] = length
         arcpy.management.AddField(feature_class, name, kind, **kwargs)

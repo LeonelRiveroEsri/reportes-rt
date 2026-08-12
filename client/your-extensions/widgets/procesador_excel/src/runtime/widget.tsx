@@ -87,6 +87,10 @@ const COLLAR_MISSING_FIELDS: Record<string, { alias: string, type: string }> = {
   q_estado_son: { alias: 'Estado del sondaje', type: 'string' }
 }
 
+const COLLAR_GDB_LABELS: Record<string, string> = Object.fromEntries(
+  COLLAR_FIELD_ORDER.map(name => [name, name.startsWith('r_fch_') || name.startsWith('av_fch_') ? name : name.toUpperCase()])
+)
+
 const DEFAULT_SUBMIT_URL = 'https://sig.aminerals.cl/vector/rest/services/ProcesarExcel/GPServer/Procesar%20archivo%20Excel/submitJob'
 const MAX_FILE_SIZE = 25 * 1024 * 1024
 const wait = async (milliseconds: number) => await new Promise(resolve => setTimeout(resolve, milliseconds))
@@ -322,7 +326,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
             const date = field?.type === 'date' || field?.type === 'date-only'
             return {
               fieldName: field?.name || name,
-              label: field?.name || name,
+              label: COLLAR_GDB_LABELS[name] || field?.name || name,
               visible: true,
               ...(numeric ? { format: { digitSeparator: true, places: 2 } } : {}),
               ...(date ? { format: { dateFormat: 'short-date' } } : {})
