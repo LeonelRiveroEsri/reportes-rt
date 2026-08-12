@@ -208,6 +208,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   const [jimuMapView, setJimuMapView] = React.useState<JimuMapView>(null)
   const [file, setFile] = React.useState<File | null>(null)
   const [coordinateFile, setCoordinateFile] = React.useState<File | null>(null)
+  const [publishToGdb, setPublishToGdb] = React.useState(false)
   const [dragging, setDragging] = React.useState(false)
   const [stage, setStage] = React.useState<ProcessStage>('idle')
   const [status, setStatus] = React.useState('Seleccione un archivo para comenzar.')
@@ -427,6 +428,11 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     setError('')
     setResult(null)
 
+    if (publishToGdb && resultLayerRef.current && jimuMapView?.view?.map) {
+      jimuMapView.view.map.remove(resultLayerRef.current)
+      resultLayerRef.current = null
+    }
+
     try {
       setStage('uploading')
       setStatus('Cargando archivo al servidor seguro…')
@@ -460,7 +466,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
           f: 'json',
           archivo_excel: JSON.stringify({ itemID: itemId }),
           archivo_coordenadas: JSON.stringify({ itemID: coordinateItemId }),
-          publicar_en_gdb: 'false',
+          publicar_en_gdb: publishToGdb ? 'true' : 'false',
           returnZ: 'false',
           returnM: 'false'
         })
@@ -484,7 +490,9 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       }
 
       setStatus('Recuperando resultados del procesamiento…')
-      const outputNames = ['sondajes_procesados', 'cantidad_registros', 'mensaje_resultado', 'resumen_json']
+      const outputNames = publishToGdb
+        ? ['cantidad_registros', 'mensaje_resultado', 'resumen_json']
+        : ['sondajes_procesados', 'cantidad_registros', 'mensaje_resultado', 'resumen_json']
       const outputs = await Promise.all(outputNames.map(async name => {
         const output = await requestJson<ResultResponse>(`${taskUrl}/jobs/${encodeURIComponent(submitted.jobId)}/results/${name}`)
         return [name, output.value] as [string, unknown]
@@ -505,9 +513,11 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
         raw,
         featureSet
       }
-      finalResult.mapMessage = featureSet?.features
-        ? await showFeatureSetOnMap(featureSet)
-        : 'El proceso terminó, pero no devolvió entidades para el mapa.'
+      finalResult.mapMessage = publishToGdb
+        ? 'Los registros fueron enviados a Collar_Recomendado. No se agregó una capa temporal al mapa.'
+        : featureSet?.features
+          ? await showFeatureSetOnMap(featureSet)
+          : 'El proceso terminó, pero no devolvió entidades para el mapa.'
       console.log('[Procesador de Excel] resultado:', finalResult)
       setResult(finalResult)
       setStage('success')
@@ -532,6 +542,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     }
     setFile(null)
     setCoordinateFile(null)
+    setPublishToGdb(false)
     setStage('idle')
     setStatus('Seleccione un archivo para comenzar.')
     setError('')
@@ -624,9 +635,22 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
           </dl>}
         </section>}
 
+        <label className={`excel-uploader__publish-option${publishToGdb ? ' is-selected' : ''}`}>
+          <input
+            type="checkbox"
+            checked={publishToGdb}
+            onChange={event => setPublishToGdb(event.target.checked)}
+            disabled={isBusy}
+          />
+          <span>
+            <strong>Cargar directamente en Collar_Recomendado</strong>
+            <small>Reemplaza los registros de la geodatabase y no muestra una capa temporal en el mapa.</small>
+          </span>
+        </label>
+
         <div className="excel-uploader__actions">
           <button type="button" className="excel-uploader__primary" onClick={runProcess} disabled={!file || !coordinateFile || isBusy}>
-            {isBusy ? <><i className="excel-uploader__spinner" />{stage === 'validating' ? 'Validando…' : 'Procesando…'}</> : stage === 'error' && file ? 'Reintentar procesamiento' : 'Cargar y procesar'}
+            {isBusy ? <><i className="excel-uploader__spinner" />{stage === 'validating' ? 'Validando…' : 'Procesando…'}</> : stage === 'error' && file ? 'Reintentar procesamiento' : publishToGdb ? 'Cargar en GDB' : 'Procesar y mostrar en mapa'}
           </button>
           <button type="button" onClick={reset} disabled={isBusy || (!file && !coordinateFile && !result && !error)}>Limpiar</button>
         </div>
