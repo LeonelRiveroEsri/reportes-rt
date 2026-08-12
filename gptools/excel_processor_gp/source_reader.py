@@ -142,6 +142,10 @@ def read_source_inputs(workbook_path: str, coordinate_csv_path: str) -> Tuple[pd
     for field in TEXT_FIELDS:
         merged[field] = merged[field].astype("string").str.strip().replace("", pd.NA).str.slice(0, 255)
 
+    # Regla de negocio: el tipo de perforación nunca se entrega nulo.
+    # Aplica también a cadenas vacías o con solo espacios, normalizadas arriba.
+    merged["q_tipo_perf"] = merged["q_tipo_perf"].fillna("Sin datos")
+
     merged.loc[merged["r_este"] < 300000, "r_este"] += 300000
     merged.loc[merged["r_norte"] < 1000000, "r_norte"] += 6400000
     valid_xyz = merged[["r_este", "r_norte", "r_cota"]].notna().all(axis=1)

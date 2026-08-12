@@ -40,7 +40,7 @@ class SourceReaderTests(unittest.TestCase):
                 advance.to_excel(writer, sheet_name="AVANCE MUESTRERA", startrow=1, index=False)
             pd.DataFrame({
                 "NRO_SON": ["DDH4161"], "DES_CAMPANA": ["2025-2030"],
-                "ANNO_SONDAJE": [2026], "DES_TIPO_PERF": ["DD"],
+                "ANNO_SONDAJE": [2026], "DES_TIPO_PERF": [None],
                 "DES_ESTADO_SON": ["FIN"], "ESTE": [58559.39],
                 "NORTE": [89865.22], "COTA": [3124.97],
             }).to_csv(csv, sep=";", index=False, encoding="latin1")
@@ -50,6 +50,7 @@ class SourceReaderTests(unittest.TestCase):
             self.assertEqual(len(result), 1)
             self.assertAlmostEqual(result.iloc[0]["r_este"], 358559.39)
             self.assertAlmostEqual(result.iloc[0]["r_norte"], 6489865.22)
+            self.assertEqual(result.iloc[0]["q_tipo_perf"], "Sin datos")
             self.assertEqual(metrics["coincidencias_coordenadas"], 1)
             self.assertEqual(metrics["descartados_geometria"], 0)
 
