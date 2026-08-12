@@ -43,6 +43,7 @@
 
   &__alert { display: flex; margin-top: 18px; padding: 14px 16px; flex-direction: column; gap: 3px; border-radius: 8px; font-size: 12px; }
   &__alert--error { border: 1px solid #efb3b3; color: #922d2d; background: #fff2f2; }
+  &__alert--success { border: 1px solid #acd8ca; color: #236b57; background: #f3fbf8; }
   &__result {
     display: grid; grid-template-columns: auto 1fr; gap: 16px; margin-top: 18px; padding: 20px;
     border: 1px solid #acd8ca; border-radius: 11px; background: #f3fbf8;

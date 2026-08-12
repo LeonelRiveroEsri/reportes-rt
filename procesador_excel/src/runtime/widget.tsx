@@ -1,9 +1,10 @@
 import { React, AllWidgetProps, SessionManager } from 'jimu-core'
 import { JimuMapView, JimuMapViewComponent, loadArcGISJSAPIModules } from 'jimu-arcgis'
+import * as XLSX from 'xlsx'
 import { IMConfig } from '../config'
 import './style.scss'
 
-type ProcessStage = 'idle' | 'uploading' | 'submitting' | 'processing' | 'success' | 'error'
+type ProcessStage = 'idle' | 'validating' | 'uploading' | 'submitting' | 'processing' | 'success' | 'error'
 
 interface ArcGISError {
   code?: number
@@ -90,6 +91,83 @@ const DEFAULT_SUBMIT_URL = 'https://sig.aminerals.cl/vector/rest/services/Proces
 const MAX_FILE_SIZE = 25 * 1024 * 1024
 const wait = async (milliseconds: number) => await new Promise(resolve => setTimeout(resolve, milliseconds))
 
+const REQUIRED_WORKBOOK_SCHEMA = [
+  {
+    sheet: 'ConsolidadoSND_MLP',
+    headerRow: 0,
+    key: 'NRO_SON',
+    columns: [
+      'ID', 'Tipo de Sondaje', 'NRO_SON', 'Sector', 'Este', 'Norte', 'Cota',
+      'Azimut', 'Inclinación', 'Largo (m)', 'Fecha Inicio', 'Fecha Termino',
+      'Por Perforar (m)', 'Avance Actual (m)', 'Mts. Faltantes', '%Avance',
+      'Estatus Perforación (m)', 'Largo Final (m)', 'Certificado Collar', 'Observación'
+    ]
+  },
+  {
+    sheet: 'AVANCE MUESTRERA',
+    headerRow: 1,
+    key: 'Sondaje',
+    columns: [
+      'Sondaje', 'Programa', 'Sonda', 'Inicio', 'Término', 'Largo Programado',
+      'Fondo Final', 'Faltante', '% Perforado', 'Tricono', 'Fotografía',
+      'Corte', 'Hasta3', 'Hasta2'
+    ]
+  }
+]
+
+const normalizeCell = (value: unknown) => String(value ?? '').trim()
+
+const validateWorkbook = async (candidate: File): Promise<string> => {
+  let workbook: XLSX.WorkBook
+  try {
+    workbook = XLSX.read(await candidate.arrayBuffer(), { type: 'array', cellDates: true })
+  } catch (_) {
+    throw new Error('El archivo no pudo abrirse como un libro XLSX válido. Verifique que no esté dañado o protegido con contraseña.')
+  }
+
+  const missingSheets = REQUIRED_WORKBOOK_SCHEMA
+    .filter(definition => !workbook.SheetNames.includes(definition.sheet))
+    .map(definition => definition.sheet)
+  if (missingSheets.length) {
+    throw new Error(`Faltan hojas obligatorias: ${missingSheets.join(', ')}.`)
+  }
+
+  const summaries: string[] = []
+  for (const definition of REQUIRED_WORKBOOK_SCHEMA) {
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[definition.sheet], {
+      header: 1,
+      defval: null,
+      raw: false
+    })
+    const headers = (rows[definition.headerRow] || []).map(normalizeCell)
+    const missingColumns = definition.columns.filter(column => !headers.includes(column))
+    if (missingColumns.length) {
+      throw new Error(`La hoja "${definition.sheet}" no contiene las columnas requeridas: ${missingColumns.join(', ')}.`)
+    }
+
+    const duplicateHeaders = headers.filter((header, index) => header && headers.indexOf(header) !== index)
+    if (duplicateHeaders.length) {
+      throw new Error(`La hoja "${definition.sheet}" contiene encabezados duplicados: ${Array.from(new Set(duplicateHeaders)).join(', ')}.`)
+    }
+
+    const keyIndex = headers.indexOf(definition.key)
+    const dataRows = rows.slice(definition.headerRow + 1)
+      .filter(row => row.some(value => normalizeCell(value) !== ''))
+    if (!dataRows.length) throw new Error(`La hoja "${definition.sheet}" no contiene registros.`)
+
+    const keys = dataRows.map(row => normalizeCell(row[keyIndex]).toUpperCase()).filter(Boolean)
+    if (definition.sheet === 'ConsolidadoSND_MLP' && keys.length !== dataRows.length) {
+      throw new Error(`La hoja "${definition.sheet}" contiene registros sin ${definition.key}.`)
+    }
+    const duplicateKeys = keys.filter((key, index) => keys.indexOf(key) !== index)
+    if (duplicateKeys.length) {
+      throw new Error(`La hoja "${definition.sheet}" contiene ${definition.key} duplicados: ${Array.from(new Set(duplicateKeys)).slice(0, 8).join(', ')}.`)
+    }
+    summaries.push(`${definition.sheet}: ${dataRows.length} registros`)
+  }
+  return summaries.join(' · ')
+}
+
 const Widget = (props: AllWidgetProps<IMConfig>) => {
   const inputRef = React.useRef<HTMLInputElement>(null)
   const resultLayerRef = React.useRef<any>(null)
@@ -99,6 +177,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   const [stage, setStage] = React.useState<ProcessStage>('idle')
   const [status, setStatus] = React.useState('Seleccione un archivo para comenzar.')
   const [error, setError] = React.useState('')
+  const [validationMessage, setValidationMessage] = React.useState('')
   const [result, setResult] = React.useState<ProcessingResult | null>(null)
   const submitJobUrl = props.config.submitJobUrl || DEFAULT_SUBMIT_URL
   const taskUrl = submitJobUrl.replace(/\/submitJob\/?$/i, '')
@@ -242,8 +321,9 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       : `${graphics.length} puntos agregados al mapa.`
   }, [jimuMapView])
 
-  const validateAndSelect = (candidate?: File) => {
+  const validateAndSelect = async (candidate?: File) => {
     setError('')
+    setValidationMessage('')
     setResult(null)
     setStage('idle')
     if (!candidate) return
@@ -257,8 +337,21 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       setError('El archivo supera el máximo permitido de 25 MB.')
       return
     }
-    setFile(candidate)
-    setStatus('Archivo preparado para cargar y procesar.')
+    setFile(null)
+    setStage('validating')
+    setStatus('Validando hojas, encabezados y registros del archivo…')
+    try {
+      const summary = await validateWorkbook(candidate)
+      setFile(candidate)
+      setValidationMessage(`Estructura validada correctamente. ${summary}.`)
+      setStatus('Archivo validado y preparado para procesar.')
+      setStage('idle')
+    } catch (validationError) {
+      setStage('error')
+      setStatus('El archivo no cumple el formato requerido.')
+      setError(validationError instanceof Error ? validationError.message : 'No fue posible validar la estructura del Excel.')
+      if (inputRef.current) inputRef.current.value = ''
+    }
   }
 
   const runProcess = async () => {
@@ -359,12 +452,13 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     setStage('idle')
     setStatus('Seleccione un archivo para comenzar.')
     setError('')
+    setValidationMessage('')
     setResult(null)
     if (inputRef.current) inputRef.current.value = ''
   }
 
-  const isBusy = ['uploading', 'submitting', 'processing'].includes(stage)
-  const progress = stage === 'uploading' ? 25 : stage === 'submitting' ? 50 : stage === 'processing' ? 75 : stage === 'success' ? 100 : 0
+  const isBusy = ['validating', 'uploading', 'submitting', 'processing'].includes(stage)
+  const progress = stage === 'validating' ? 10 : stage === 'uploading' ? 25 : stage === 'submitting' ? 50 : stage === 'processing' ? 75 : stage === 'success' ? 100 : 0
   const sizeLabel = file ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : ''
 
   return (
@@ -407,7 +501,8 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
           <div className="excel-uploader__track"><i style={{ width: `${progress}%` }} /></div>
         </div>}
 
-        {error && <div className="excel-uploader__alert excel-uploader__alert--error" role="alert"><strong>No fue posible procesar</strong><span>{error}</span></div>}
+        {error && <div className="excel-uploader__alert excel-uploader__alert--error" role="alert"><strong>{file ? 'No fue posible procesar' : 'Archivo no válido'}</strong><span>{error}</span></div>}
+        {validationMessage && !error && <div className="excel-uploader__alert excel-uploader__alert--success" role="status"><strong>Archivo válido</strong><span>{validationMessage}</span></div>}
 
         {result && <section className="excel-uploader__result" aria-live="polite">
           <div className="excel-uploader__success-icon" aria-hidden="true">✓</div>
@@ -426,7 +521,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
 
         <div className="excel-uploader__actions">
           <button type="button" className="excel-uploader__primary" onClick={runProcess} disabled={!file || isBusy}>
-            {isBusy ? <><i className="excel-uploader__spinner" />Procesando…</> : stage === 'error' ? 'Reintentar procesamiento' : 'Cargar y procesar'}
+            {isBusy ? <><i className="excel-uploader__spinner" />{stage === 'validating' ? 'Validando…' : 'Procesando…'}</> : stage === 'error' && file ? 'Reintentar procesamiento' : 'Cargar y procesar'}
           </button>
           <button type="button" onClick={reset} disabled={isBusy || (!file && !result && !error)}>Limpiar</button>
         </div>
