@@ -1,8 +1,9 @@
 # Procesador de archivos Excel
 
 Base de una herramienta de geoprocesamiento para ArcGIS Pro y ArcGIS Enterprise.
-La herramienta recibe el libro maestro `.xlsx`, lee las hojas
-`ConsolidadoSND_MLP` y `AVANCE MUESTRERA`, crea puntos 3D, los reproyecta desde
+La herramienta recibe el libro maestro `.xlsx` y el archivo de coordenadas
+`SNDTGIS_ACQ.csv`. Lee las hojas `CONSOLIDADO_PROGRAMA` y `AVANCE MUESTRERA`,
+reemplaza las coordenadas cuando existe coincidencia en ACQ, crea puntos 3D y los reproyecta desde
 PSAD56 a WGS84 y devuelve un FeatureSet. Opcionalmente puede reemplazar la
 feature class de negocio cuando se activa el parámetro de publicación.
 
@@ -21,7 +22,11 @@ JSON.
 
 Entrada:
 
-- **Archivo Excel (.xlsx)**: archivo que se cargará y procesará.
+- **Archivo Excel (.xlsx)**: libro maestro con `CONSOLIDADO_PROGRAMA` y
+  `AVANCE MUESTRERA`.
+- **Coordenadas SNDTGIS_ACQ (.csv)**: fuente externa obligatoria que aporta
+  coordenadas normalizadas y atributos de campaña.
+
 - **Publicar en Collar_Recomendado** (`GPBoolean`): `False` por defecto. Con
   `True`, respalda y trunca el destino y carga geometrías y atributos mediante
   `arcpy.da.InsertCursor` en

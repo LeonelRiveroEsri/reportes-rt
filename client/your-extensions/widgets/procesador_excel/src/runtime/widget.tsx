@@ -93,11 +93,11 @@ const wait = async (milliseconds: number) => await new Promise(resolve => setTim
 
 const REQUIRED_WORKBOOK_SCHEMA = [
   {
-    sheet: 'ConsolidadoSND_MLP',
-    headerRow: 0,
-    key: 'NRO_SON',
+    sheet: 'CONSOLIDADO_PROGRAMA',
+    headerRow: 3,
+    key: 'Sondaje',
     columns: [
-      'ID', 'Tipo de Sondaje', 'NRO_SON', 'Sector', 'Este', 'Norte', 'Cota',
+      'ID', 'Tipo de Sondaje', 'Sondaje', 'Sector', 'Este', 'Norte', 'Cota',
       'Azimut', 'Inclinación', 'Largo (m)', 'Fecha Inicio', 'Fecha Termino',
       'Por Perforar (m)', 'Avance Actual (m)', 'Mts. Faltantes', '%Avance',
       'Estatus Perforación (m)', 'Largo Final (m)', 'Certificado Collar', 'Observación'
@@ -151,14 +151,12 @@ const validateWorkbook = async (candidate: File): Promise<string> => {
     }
 
     const keyIndex = headers.indexOf(definition.key)
-    const dataRows = rows.slice(definition.headerRow + 1)
+    const rawDataRows = rows.slice(definition.headerRow + 1)
       .filter(row => row.some(value => normalizeCell(value) !== ''))
-    if (!dataRows.length) throw new Error(`La hoja "${definition.sheet}" no contiene registros.`)
+    const dataRows = rawDataRows.filter(row => normalizeCell(row[keyIndex]) !== '')
+    if (!dataRows.length) throw new Error(`La hoja "${definition.sheet}" no contiene registros con ${definition.key}.`)
 
-    const keys = dataRows.map(row => normalizeCell(row[keyIndex]).toUpperCase()).filter(Boolean)
-    if (definition.sheet === 'ConsolidadoSND_MLP' && keys.length !== dataRows.length) {
-      throw new Error(`La hoja "${definition.sheet}" contiene registros sin ${definition.key}.`)
-    }
+    const keys = dataRows.map(row => normalizeCell(row[keyIndex]).toUpperCase())
     const duplicateKeys = keys.filter((key, index) => keys.indexOf(key) !== index)
     if (duplicateKeys.length) {
       throw new Error(`La hoja "${definition.sheet}" contiene ${definition.key} duplicados: ${Array.from(new Set(duplicateKeys)).slice(0, 8).join(', ')}.`)
@@ -168,11 +166,48 @@ const validateWorkbook = async (candidate: File): Promise<string> => {
   return summaries.join(' · ')
 }
 
+const REQUIRED_COORDINATE_COLUMNS = [
+  'NRO_SON', 'DES_CAMPANA', 'ANNO_SONDAJE', 'DES_TIPO_PERF',
+  'DES_ESTADO_SON', 'ESTE', 'NORTE', 'COTA'
+]
+
+const validateCoordinateCsv = async (candidate: File): Promise<string> => {
+  let text: string
+  try {
+    const bytes = await candidate.arrayBuffer()
+    text = new TextDecoder('windows-1252').decode(bytes)
+  } catch (_) {
+    throw new Error('No fue posible leer el archivo CSV de coordenadas.')
+  }
+  const separator = (text.split(/\r?\n/, 1)[0].match(/;/g)?.length || 0) >=
+    (text.split(/\r?\n/, 1)[0].match(/,/g)?.length || 0) ? ';' : ','
+  const workbook = XLSX.read(text, { type: 'string', FS: separator })
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[workbook.SheetNames[0]], {
+    header: 1,
+    defval: null,
+    raw: false
+  })
+  const headers = (rows[0] || []).map(normalizeCell)
+  const missing = REQUIRED_COORDINATE_COLUMNS.filter(column => !headers.includes(column))
+  if (missing.length) throw new Error(`El CSV SNDTGIS_ACQ no contiene las columnas requeridas: ${missing.join(', ')}.`)
+  const keyIndex = headers.indexOf('NRO_SON')
+  const dataRows = rows.slice(1).filter(row => row.some(value => normalizeCell(value) !== ''))
+  if (!dataRows.length) throw new Error('El CSV SNDTGIS_ACQ no contiene registros.')
+  const keys = dataRows.map(row => normalizeCell(row[keyIndex]).toUpperCase()).filter(Boolean)
+  const duplicates = keys.filter((key, index) => keys.indexOf(key) !== index)
+  if (duplicates.length) {
+    throw new Error(`El CSV SNDTGIS_ACQ contiene NRO_SON duplicados: ${Array.from(new Set(duplicates)).slice(0, 8).join(', ')}.`)
+  }
+  return `SNDTGIS_ACQ: ${dataRows.length} registros`
+}
+
 const Widget = (props: AllWidgetProps<IMConfig>) => {
   const inputRef = React.useRef<HTMLInputElement>(null)
+  const coordinateInputRef = React.useRef<HTMLInputElement>(null)
   const resultLayerRef = React.useRef<any>(null)
   const [jimuMapView, setJimuMapView] = React.useState<JimuMapView>(null)
   const [file, setFile] = React.useState<File | null>(null)
+  const [coordinateFile, setCoordinateFile] = React.useState<File | null>(null)
   const [dragging, setDragging] = React.useState(false)
   const [stage, setStage] = React.useState<ProcessStage>('idle')
   const [status, setStatus] = React.useState('Seleccione un archivo para comenzar.')
@@ -344,7 +379,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       const summary = await validateWorkbook(candidate)
       setFile(candidate)
       setValidationMessage(`Estructura validada correctamente. ${summary}.`)
-      setStatus('Archivo validado y preparado para procesar.')
+      setStatus(coordinateFile ? 'Ambas entradas están validadas y preparadas para procesar.' : 'Excel validado. Seleccione ahora el CSV SNDTGIS_ACQ.')
       setStage('idle')
     } catch (validationError) {
       setStage('error')
@@ -354,8 +389,41 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     }
   }
 
+  const validateAndSelectCoordinates = async (candidate?: File) => {
+    setError('')
+    setValidationMessage('')
+    setResult(null)
+    setStage('idle')
+    if (!candidate) return
+    if (!candidate.name.toLowerCase().endsWith('.csv')) {
+      setCoordinateFile(null)
+      setError('Formato no permitido para las coordenadas. Seleccione un archivo SNDTGIS_ACQ con extensión .csv.')
+      return
+    }
+    if (candidate.size > MAX_FILE_SIZE) {
+      setCoordinateFile(null)
+      setError('El CSV de coordenadas supera el máximo permitido de 25 MB.')
+      return
+    }
+    setCoordinateFile(null)
+    setStage('validating')
+    setStatus('Validando esquema y registros de SNDTGIS_ACQ…')
+    try {
+      const summary = await validateCoordinateCsv(candidate)
+      setCoordinateFile(candidate)
+      setValidationMessage(`Archivo de coordenadas válido. ${summary}.`)
+      setStatus(file ? 'Ambas entradas están validadas y preparadas para procesar.' : 'CSV validado. Seleccione ahora el libro Excel.')
+      setStage('idle')
+    } catch (validationError) {
+      setStage('error')
+      setStatus('El CSV no cumple el formato requerido.')
+      setError(validationError instanceof Error ? validationError.message : 'No fue posible validar SNDTGIS_ACQ.')
+      if (coordinateInputRef.current) coordinateInputRef.current.value = ''
+    }
+  }
+
   const runProcess = async () => {
-    if (!file || stage === 'uploading' || stage === 'submitting' || stage === 'processing') return
+    if (!file || !coordinateFile || stage === 'uploading' || stage === 'submitting' || stage === 'processing') return
     setError('')
     setResult(null)
 
@@ -373,12 +441,26 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       const itemId = uploaded.item?.itemID || uploaded.item?.itemId
       if (!itemId) throw new Error('La carga terminó, pero el servidor no devolvió el itemID del archivo.')
 
+      setStatus('Excel cargado. Cargando coordenadas SNDTGIS_ACQ…')
+      const uploadedCoordinates = await requestForm<UploadResponse>(`${gpServerUrl}/uploads/upload`, token => {
+        const form = new FormData()
+        form.append('f', 'json')
+        form.append('file', coordinateFile, coordinateFile.name)
+        form.append('description', `Coordenadas cargadas desde Experience Builder: ${coordinateFile.name}`)
+        if (token) form.append('token', token)
+        return form
+      })
+      const coordinateItemId = uploadedCoordinates.item?.itemID || uploadedCoordinates.item?.itemId
+      if (!coordinateItemId) throw new Error('El servidor no devolvió el itemID del CSV de coordenadas.')
+
       setStage('submitting')
       setStatus('Archivo cargado. Iniciando el geoproceso…')
       const submitted = await requestForm<JobResponse>(submitJobUrl, token => {
         const params = new URLSearchParams({
           f: 'json',
           archivo_excel: JSON.stringify({ itemID: itemId }),
+          archivo_coordenadas: JSON.stringify({ itemID: coordinateItemId }),
+          publicar_en_gdb: 'false',
           returnZ: 'false',
           returnM: 'false'
         })
@@ -449,17 +531,20 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       resultLayerRef.current = null
     }
     setFile(null)
+    setCoordinateFile(null)
     setStage('idle')
     setStatus('Seleccione un archivo para comenzar.')
     setError('')
     setValidationMessage('')
     setResult(null)
     if (inputRef.current) inputRef.current.value = ''
+    if (coordinateInputRef.current) coordinateInputRef.current.value = ''
   }
 
   const isBusy = ['validating', 'uploading', 'submitting', 'processing'].includes(stage)
   const progress = stage === 'validating' ? 10 : stage === 'uploading' ? 25 : stage === 'submitting' ? 50 : stage === 'processing' ? 75 : stage === 'success' ? 100 : 0
   const sizeLabel = file ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : ''
+  const coordinateSizeLabel = coordinateFile ? `${(coordinateFile.size / 1024 / 1024).toFixed(2)} MB` : ''
 
   return (
     <div className="excel-uploader jimu-widget">
@@ -467,8 +552,28 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
         <img src="https://www.aminerals.cl/images/default-source/logos-amsa/logo-amsa.svg" alt="Antofagasta Minerals" />
         <div>
           <span>Procesamiento de información</span>
-          <h2>Carga de archivos Excel</h2>
-          <p>Cargue una planilla para validar su contenido y conocer la cantidad de registros disponibles.</p>
+          <h2>Procesamiento de sondajes</h2>
+          <p>Cargue el libro maestro y el CSV SNDTGIS_ACQ para validar, normalizar coordenadas y generar los puntos.</p>
+        </div>
+
+        <div
+          className={`excel-uploader__dropzone excel-uploader__dropzone--coordinates${coordinateFile ? ' has-file' : ''}`}
+          onDragOver={event => event.preventDefault()}
+          onDrop={event => {
+            event.preventDefault()
+            if (!isBusy) validateAndSelectCoordinates(event.dataTransfer.files?.[0])
+          }}
+          onClick={() => !isBusy && coordinateInputRef.current?.click()}
+          onKeyDown={event => { if (!isBusy && (event.key === 'Enter' || event.key === ' ')) coordinateInputRef.current?.click() }}
+          role="button"
+          tabIndex={0}
+          aria-label="Seleccionar o arrastrar CSV SNDTGIS_ACQ"
+        >
+          <input ref={coordinateInputRef} type="file" accept=".csv,text/csv" onChange={event => validateAndSelectCoordinates(event.target.files?.[0])} disabled={isBusy} />
+          <div className="excel-uploader__file-icon excel-uploader__file-icon--csv" aria-hidden="true">CSV</div>
+          {coordinateFile
+            ? <><strong>{coordinateFile.name}</strong><span>{coordinateSizeLabel} · Coordenadas ACQ</span><small>Haga clic para reemplazar el archivo</small></>
+            : <><strong>Arrastre SNDTGIS_ACQ aquí</strong><span>o haga clic para seleccionarlo</span><small>Formato CSV · Máximo 25 MB</small></>}
         </div>
       </header>
 
@@ -501,7 +606,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
           <div className="excel-uploader__track"><i style={{ width: `${progress}%` }} /></div>
         </div>}
 
-        {error && <div className="excel-uploader__alert excel-uploader__alert--error" role="alert"><strong>{file ? 'No fue posible procesar' : 'Archivo no válido'}</strong><span>{error}</span></div>}
+        {error && <div className="excel-uploader__alert excel-uploader__alert--error" role="alert"><strong>No fue posible validar o procesar</strong><span>{error}</span></div>}
         {validationMessage && !error && <div className="excel-uploader__alert excel-uploader__alert--success" role="status"><strong>Archivo válido</strong><span>{validationMessage}</span></div>}
 
         {result && <section className="excel-uploader__result" aria-live="polite">
@@ -513,17 +618,17 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
             {result.mapMessage && <p className="excel-uploader__map-message">{result.mapMessage}</p>}
           </div>
           {result.summary && <dl>
-            <div><dt>Hoja</dt><dd>{String(result.summary.sheet_name || '—')}</dd></div>
-            <div><dt>Columnas</dt><dd>{String(result.summary.column_count ?? '—')}</dd></div>
-            <div><dt>Archivo</dt><dd>{String(result.summary.file_name || file?.name || '—')}</dd></div>
+            <div><dt>Libro maestro</dt><dd>{String(result.summary.archivo || file?.name || '—')}</dd></div>
+            <div><dt>Coordenadas ACQ</dt><dd>{String(result.summary.archivo_coordenadas || coordinateFile?.name || '—')}</dd></div>
+            <div><dt>Coordenadas reemplazadas</dt><dd>{String((result.summary.metricas as Record<string, unknown>)?.coincidencias_coordenadas ?? '—')}</dd></div>
           </dl>}
         </section>}
 
         <div className="excel-uploader__actions">
-          <button type="button" className="excel-uploader__primary" onClick={runProcess} disabled={!file || isBusy}>
+          <button type="button" className="excel-uploader__primary" onClick={runProcess} disabled={!file || !coordinateFile || isBusy}>
             {isBusy ? <><i className="excel-uploader__spinner" />{stage === 'validating' ? 'Validando…' : 'Procesando…'}</> : stage === 'error' && file ? 'Reintentar procesamiento' : 'Cargar y procesar'}
           </button>
-          <button type="button" onClick={reset} disabled={isBusy || (!file && !result && !error)}>Limpiar</button>
+          <button type="button" onClick={reset} disabled={isBusy || (!file && !coordinateFile && !result && !error)}>Limpiar</button>
         </div>
       </main>
 

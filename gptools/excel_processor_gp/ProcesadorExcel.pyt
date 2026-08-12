@@ -18,9 +18,9 @@ from excel_feature_builder import (
     TRANSFORMATION,
     TRANSFORMATION_WKID,
     build_feature_class,
-    read_master_workbook,
     replace_target_with_cursor,
 )
+from source_reader import read_source_inputs
 
 
 TARGET_FEATURE_CLASS = (
@@ -54,6 +54,15 @@ class ProcesarExcel:
             direction="Input",
         )
         input_excel.filter.list = ["xlsx"]
+
+        input_coordinates = arcpy.Parameter(
+            displayName="Coordenadas SNDTGIS_ACQ (.csv)",
+            name="archivo_coordenadas",
+            datatype="DEFile",
+            parameterType="Required",
+            direction="Input",
+        )
+        input_coordinates.filter.list = ["csv"]
 
         publish_to_gdb = arcpy.Parameter(
             displayName="Publicar en Collar_Recomendado",
@@ -97,7 +106,7 @@ class ProcesarExcel:
             direction="Output",
         )
 
-        return [input_excel, publish_to_gdb, output_features, record_count, status_message, result_json]
+        return [input_excel, input_coordinates, publish_to_gdb, output_features, record_count, status_message, result_json]
 
     def isLicensed(self):
         return True
@@ -110,9 +119,14 @@ class ProcesarExcel:
         if value and not value.lower().endswith(".xlsx"):
             parameters[0].setErrorMessage("Seleccione un archivo con extensión .xlsx.")
 
+        coordinate_value = parameters[1].valueAsText
+        if coordinate_value and not coordinate_value.lower().endswith(".csv"):
+            parameters[1].setErrorMessage("Seleccione un archivo SNDTGIS_ACQ con extensión .csv.")
+
     def execute(self, parameters, messages):
         input_path = parameters[0].valueAsText
-        publish_requested = str(parameters[1].valueAsText or "false").lower() == "true"
+        coordinate_path = parameters[1].valueAsText
+        publish_requested = str(parameters[2].valueAsText or "false").lower() == "true"
         arcpy.SetProgressor("step", "Preparando procesamiento...", 0, 4, 1)
 
         try:
@@ -120,9 +134,9 @@ class ProcesarExcel:
             arcpy.SetProgressorLabel("Validando archivo de entrada...")
             arcpy.SetProgressorPosition()
 
-            arcpy.AddMessage("Leyendo hojas ConsolidadoSND_MLP y AVANCE MUESTRERA...")
+            arcpy.AddMessage("Leyendo CONSOLIDADO_PROGRAMA, AVANCE MUESTRERA y SNDTGIS_ACQ...")
             arcpy.SetProgressorLabel("Normalizando el libro maestro...")
-            data, metrics = read_master_workbook(input_path)
+            data, metrics = read_source_inputs(input_path, coordinate_path)
             arcpy.SetProgressorPosition()
 
             result_message = (
@@ -164,6 +178,7 @@ class ProcesarExcel:
             arcpy.SetProgressorPosition()
             result = {
                 "archivo": os.path.basename(input_path),
+                "archivo_coordenadas": os.path.basename(coordinate_path),
                 "registros": len(data),
                 "metricas": metrics,
                 "wkid_origen": SOURCE_WKID,
@@ -184,10 +199,10 @@ class ProcesarExcel:
             layer_result = arcpy.management.MakeFeatureLayer(
                 output_features, "Sondajes procesados"
             )
-            parameters[2].value = layer_result.getOutput(0)
-            parameters[3].value = len(data)
-            parameters[4].value = result_message
-            parameters[5].value = result_json
+            parameters[3].value = layer_result.getOutput(0)
+            parameters[4].value = len(data)
+            parameters[5].value = result_message
+            parameters[6].value = result_json
             arcpy.SetProgressorLabel("Procesamiento completado.")
             arcpy.SetProgressorPosition()
         except Exception as exc:
