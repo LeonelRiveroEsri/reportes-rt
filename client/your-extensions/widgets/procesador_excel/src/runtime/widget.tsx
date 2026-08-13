@@ -98,7 +98,6 @@ const wait = async (milliseconds: number) => await new Promise(resolve => setTim
 const REQUIRED_WORKBOOK_SCHEMA = [
   {
     sheet: 'CONSOLIDADO_PROGRAMA',
-    headerRow: 3,
     key: 'Sondaje',
     columns: [
       'ID', 'Tipo de Sondaje', 'Sondaje', 'Sector', 'Este', 'Norte', 'Cota',
@@ -109,7 +108,6 @@ const REQUIRED_WORKBOOK_SCHEMA = [
   },
   {
     sheet: 'AVANCE MUESTRERA',
-    headerRow: 1,
     key: 'Sondaje',
     columns: [
       'Sondaje', 'Programa', 'Sonda', 'Inicio', 'Término', 'Largo Programado',
@@ -143,7 +141,14 @@ const validateWorkbook = async (candidate: File): Promise<string> => {
       defval: null,
       raw: false
     })
-    const headers = (rows[definition.headerRow] || []).map(normalizeCell)
+    const headerRow = rows.slice(0, 50).findIndex(row => {
+      const values = row.map(normalizeCell)
+      return definition.columns.every(column => values.includes(column))
+    })
+    if (headerRow < 0) {
+      throw new Error(`No se encontró el encabezado requerido en la hoja "${definition.sheet}" dentro de las primeras 50 filas.`)
+    }
+    const headers = (rows[headerRow] || []).map(normalizeCell)
     const missingColumns = definition.columns.filter(column => !headers.includes(column))
     if (missingColumns.length) {
       throw new Error(`La hoja "${definition.sheet}" no contiene las columnas requeridas: ${missingColumns.join(', ')}.`)
@@ -155,7 +160,7 @@ const validateWorkbook = async (candidate: File): Promise<string> => {
     }
 
     const keyIndex = headers.indexOf(definition.key)
-    const rawDataRows = rows.slice(definition.headerRow + 1)
+    const rawDataRows = rows.slice(headerRow + 1)
       .filter(row => row.some(value => normalizeCell(value) !== ''))
     const dataRows = rawDataRows.filter(row => normalizeCell(row[keyIndex]) !== '')
     if (!dataRows.length) throw new Error(`La hoja "${definition.sheet}" no contiene registros con ${definition.key}.`)
@@ -608,28 +613,19 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
           <p>Cargue el libro maestro y el CSV SNDTGIS_ACQ para validar, normalizar coordenadas y generar los puntos.</p>
         </div>
 
-        <div
-          className={`excel-uploader__dropzone excel-uploader__dropzone--coordinates${coordinateFile ? ' has-file' : ''}`}
-          onDragOver={event => event.preventDefault()}
-          onDrop={event => {
-            event.preventDefault()
-            if (!isBusy) validateAndSelectCoordinates(event.dataTransfer.files?.[0])
-          }}
-          onClick={() => !isBusy && coordinateInputRef.current?.click()}
-          onKeyDown={event => { if (!isBusy && (event.key === 'Enter' || event.key === ' ')) coordinateInputRef.current?.click() }}
-          role="button"
-          tabIndex={0}
-          aria-label="Seleccionar o arrastrar CSV SNDTGIS_ACQ"
-        >
-          <input ref={coordinateInputRef} type="file" accept=".csv,text/csv" onChange={event => validateAndSelectCoordinates(event.target.files?.[0])} disabled={isBusy} />
-          <div className="excel-uploader__file-icon excel-uploader__file-icon--csv" aria-hidden="true">CSV</div>
-          {coordinateFile
-            ? <><strong>{coordinateFile.name}</strong><span>{coordinateSizeLabel} · Coordenadas ACQ</span><small>Haga clic para reemplazar el archivo</small></>
-            : <><strong>Arrastre SNDTGIS_ACQ aquí</strong><span>o haga clic para seleccionarlo</span><small>Formato CSV · Máximo 25 MB</small></>}
-        </div>
       </header>
 
       <main className="excel-uploader__content">
+        <div className="excel-uploader__steps" aria-label="Etapas del procesamiento">
+          <span className={file || coordinateFile ? 'is-active' : ''}><i>1</i>Archivos</span>
+          <span className={validationMessage && !error ? 'is-active' : ''}><i>2</i>Validación</span>
+          <span className={isBusy || stage === 'success' ? 'is-active' : ''}><i>3</i>Procesamiento</span>
+        </div>
+        <div className="excel-uploader__section-head">
+          <h3>1. Archivos requeridos</h3>
+          <small>{Number(Boolean(file)) + Number(Boolean(coordinateFile))} de 2 seleccionados</small>
+        </div>
+        <div className="excel-uploader__uploads">
         <div
           className={`excel-uploader__dropzone${dragging ? ' is-dragging' : ''}${file ? ' has-file' : ''}`}
           onDragEnter={event => { event.preventDefault(); if (!isBusy) setDragging(true) }}
@@ -647,10 +643,28 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
           aria-label="Seleccionar o arrastrar archivo Excel"
         >
           <input ref={inputRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={event => validateAndSelect(event.target.files?.[0])} disabled={isBusy} />
+          <b className="excel-uploader__file-role">Libro maestro</b>
           <div className="excel-uploader__file-icon" aria-hidden="true">X</div>
           {file
             ? <><strong>{file.name}</strong><span>{sizeLabel} · Archivo XLSX</span><small>Haga clic para reemplazar el archivo</small></>
-            : <><strong>Arrastre su archivo Excel aquí</strong><span>o haga clic para seleccionarlo</span><small>Formato XLSX · Máximo 25 MB</small></>}
+            : <><strong>Seleccione el libro maestro</strong><span>o arrastre el archivo aquí</span><small>Formato XLSX · Máximo 25 MB</small></>}
+        </div>
+
+        <div
+          className={`excel-uploader__dropzone excel-uploader__dropzone--coordinates${coordinateFile ? ' has-file' : ''}`}
+          onDragOver={event => event.preventDefault()}
+          onDrop={event => { event.preventDefault(); if (!isBusy) validateAndSelectCoordinates(event.dataTransfer.files?.[0]) }}
+          onClick={() => !isBusy && coordinateInputRef.current?.click()}
+          onKeyDown={event => { if (!isBusy && (event.key === 'Enter' || event.key === ' ')) coordinateInputRef.current?.click() }}
+          role="button" tabIndex={0} aria-label="Seleccionar o arrastrar CSV SNDTGIS_ACQ"
+        >
+          <input ref={coordinateInputRef} type="file" accept=".csv,text/csv" onChange={event => validateAndSelectCoordinates(event.target.files?.[0])} disabled={isBusy} />
+          <b className="excel-uploader__file-role">Coordenadas</b>
+          <div className="excel-uploader__file-icon excel-uploader__file-icon--csv" aria-hidden="true">CSV</div>
+          {coordinateFile
+            ? <><strong>{coordinateFile.name}</strong><span>{coordinateSizeLabel} · Coordenadas ACQ</span><small>Haga clic para reemplazar el archivo</small></>
+            : <><strong>Seleccione SNDTGIS_ACQ</strong><span>o arrastre el archivo aquí</span><small>Formato CSV · Máximo 25 MB</small></>}
+        </div>
         </div>
 
         {(isBusy || stage === 'success') && <div className="excel-uploader__progress" aria-live="polite">
@@ -679,6 +693,9 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
           </dl>}
         </section>}
 
+        <div className="excel-uploader__section-head excel-uploader__section-head--mode">
+          <h3>2. Modo de ejecución</h3><small>Seleccione una opción</small>
+        </div>
         <label className={`excel-uploader__publish-option${publishToGdb ? ' is-selected' : ''}`}>
           <input
             type="checkbox"
