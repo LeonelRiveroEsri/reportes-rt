@@ -14,6 +14,9 @@ SOURCE_WKID = 24879
 TARGET_WKID = 32719
 TRANSFORMATION = "PSAD_1956_To_WGS_1984_16"
 TRANSFORMATION_WKID = 6972
+PACKAGED_TEMPLATE = str(
+    Path(__file__).resolve().parent / "templates.gdb" / "Collar_Recomendado_template"
+)
 LOCAL_EAST_REGEX = re.compile(r"^\d{5}(?:\.\d+)?$")
 LOCAL_NORTH_REGEX = re.compile(r"^\d{5}(?:\.\d+)?$")
 ELEVATION_REGEX = re.compile(r"^\d{4}(?:\.\d+)?$")
@@ -192,32 +195,60 @@ def _value(value):
     return value
 
 
-def build_feature_class(data: pd.DataFrame, output_workspace: str) -> str:
-    """Crea puntos PSAD56, usa Project y devuelve la feature class WGS84 temporal."""
+def build_feature_class(
+    data: pd.DataFrame,
+    output_workspace: str,
+    template_features: str = None,
+) -> str:
+    """Proyecta cada fila en memoria e inserta una sola feature class WGS84."""
     suffix = uuid4().hex[:10]
-    psad_name = f"sondajes_psad_{suffix}"
     output_name = f"sondajes_resultado_{suffix}"
-    psad_fc = str(Path(output_workspace) / psad_name)
     output_fc = str(Path(output_workspace) / output_name)
     source = arcpy.SpatialReference(SOURCE_WKID)
     target = arcpy.SpatialReference(TARGET_WKID)
 
+    selected_template = None
+    for candidate in (template_features, PACKAGED_TEMPLATE):
+        if candidate and arcpy.Exists(candidate):
+            selected_template = candidate
+            break
+    template_available = selected_template is not None
     arcpy.management.CreateFeatureclass(
-        output_workspace, psad_name, "POINT", has_m="DISABLED", has_z="ENABLED",
-        spatial_reference=source,
+        output_workspace,
+        output_name,
+        "POINT",
+        template=selected_template,
+        has_m="DISABLED",
+        has_z="ENABLED",
+        spatial_reference=target,
     )
-    _add_output_fields(psad_fc)
-    with arcpy.da.InsertCursor(psad_fc, ["SHAPE@XYZ"] + OUTPUT_FIELDS) as cursor:
-        for _, record in data.iterrows():
-            xyz = (record["r_este"], record["r_norte"], record["r_cota"])
-            cursor.insertRow([xyz] + [_value(record[field]) for field in OUTPUT_FIELDS])
+    if not template_available:
+        # Respaldo para el modo de visualización cuando el destino compartido
+        # no está accesible desde la cuenta de ArcGIS Server.
+        _add_output_fields(output_fc)
 
-    arcpy.management.Project(psad_fc, output_fc, target, TRANSFORMATION)
-    # Sincroniza atributos X/Y con la geometría reproyectada para las ventanas emergentes.
-    with arcpy.da.UpdateCursor(output_fc, ["r_este", "r_norte", "r_cota", "SHAPE@XYZ"]) as cursor:
-        for _, _, _, xyz in cursor:
-            cursor.updateRow([xyz[0], xyz[1], xyz[2], xyz])
-    arcpy.management.Delete(psad_fc)
+    field_positions = {name: index for index, name in enumerate(OUTPUT_FIELDS)}
+    east_position = field_positions["r_este"]
+    north_position = field_positions["r_norte"]
+    elevation_position = field_positions["r_cota"]
+    with arcpy.da.InsertCursor(output_fc, ["SHAPE@"] + OUTPUT_FIELDS) as cursor:
+        for values in data[OUTPUT_FIELDS].itertuples(index=False, name=None):
+            source_geometry = arcpy.PointGeometry(
+                arcpy.Point(
+                    values[east_position],
+                    values[north_position],
+                    values[elevation_position],
+                ),
+                source,
+                has_z=True,
+            )
+            projected_geometry = source_geometry.projectAs(target, TRANSFORMATION)
+            projected_point = projected_geometry.firstPoint
+            attributes = [_value(value) for value in values]
+            attributes[east_position] = projected_point.X
+            attributes[north_position] = projected_point.Y
+            attributes[elevation_position] = projected_point.Z
+            cursor.insertRow([projected_geometry] + attributes)
     return output_fc
 
 

@@ -143,9 +143,15 @@ class ProcesarExcel:
                 f"Libro procesado correctamente. Se generaron {len(data)} puntos "
                 f"en WGS 84 / UTM 19S."
             )
-            arcpy.AddMessage("Creando puntos PSAD56 y ejecutando Project...")
+            arcpy.AddMessage(
+                "Proyectando geometrías PSAD56 en memoria e insertando la salida WGS84..."
+            )
             output_workspace = arcpy.env.scratchGDB
-            output_features = build_feature_class(data, output_workspace)
+            output_features = build_feature_class(
+                data,
+                output_workspace,
+                template_features=TARGET_FEATURE_CLASS,
+            )
             publication = {
                 "solicitado": publish_requested,
                 "publicado": False,
