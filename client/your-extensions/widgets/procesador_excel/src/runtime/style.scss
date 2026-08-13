@@ -59,6 +59,21 @@
   &__dropzone--coordinates { min-height: 185px; margin-top: 0; }
   &__dropzone--curves { min-height: 205px; }
   &__curves { max-width: 650px; }
+  &__table-result { margin-top: 18px; overflow: hidden; border: 1px solid #cbdce2; border-radius: 10px; background: #fff; }
+  &__table-head {
+    display: flex; padding: 13px 15px; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid #dbe6ea;
+    > div { display: flex; min-width: 0; flex-direction: column; }
+    strong { color: var(--amsa-dark); font-size: 12px; }
+    small { margin-top: 2px; color: #7e929e; font-size: 9px; }
+    button { flex: 0 0 auto; padding: 7px 11px; border: 1px solid var(--amsa-teal); border-radius: 6px; color: var(--amsa-teal); background: #fff; font-size: 10px; font-weight: 700; cursor: pointer; }
+    button:hover { color: #fff; background: var(--amsa-teal); }
+  }
+  &__table-scroll { max-height: 330px; overflow: auto; }
+  &__table-result table { width: 100%; border-collapse: collapse; font-size: 10px; white-space: nowrap; }
+  &__table-result th { position: sticky; z-index: 1; top: 0; padding: 9px 11px; color: #fff; background: var(--amsa-teal); font-size: 9px; letter-spacing: .04em; text-align: left; }
+  &__table-result td { padding: 8px 11px; border-bottom: 1px solid #e5ecef; color: #496270; }
+  &__table-result tr:nth-child(even) td { background: #f5f9fa; }
+  &__table-result td:nth-child(3), &__table-result td:nth-child(4) { text-align: right; font-variant-numeric: tabular-nums; }
   &__file-icon {
     display: grid; width: 54px; height: 62px; place-items: center; border-radius: 6px 13px 6px 6px;
     color: #fff; background: linear-gradient(145deg, #168f75, #08765f); box-shadow: 0 8px 18px rgba(20,108,91,.2);
