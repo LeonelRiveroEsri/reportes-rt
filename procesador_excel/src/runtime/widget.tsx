@@ -255,6 +255,7 @@ const CurvesTab = ({ fallbackToken }: CurvesTabProps) => {
   const [validation, setValidation] = React.useState('')
   const [error, setError] = React.useState('')
   const [result, setResult] = React.useState<{ count?: number, message?: string, summary?: Record<string, unknown>, table?: CurvesFeatureSet } | null>(null)
+  const [selectedCurveType, setSelectedCurveType] = React.useState('')
   const taskUrl = CURVES_SUBMIT_URL.replace(/\/submitJob\/?$/i, '')
   const gpServerUrl = taskUrl.replace(/\/GPServer\/.*$/i, '/GPServer')
   const busy = ['validating', 'uploading', 'submitting', 'processing'].includes(stage)
@@ -343,7 +344,10 @@ const CurvesTab = ({ fallbackToken }: CurvesTabProps) => {
       const outputs = await Promise.all(names.map(async name => [name, (await requestJson<ResultResponse>(`${taskUrl}/jobs/${encodeURIComponent(submitted.jobId)}/results/${name}`)).value] as [string, unknown]))
       const raw = Object.fromEntries(outputs); let summary: Record<string, unknown>
       if (typeof raw.resumen_json === 'string') { try { summary = JSON.parse(raw.resumen_json) } catch (_) { /* sin resumen estructurado */ } }
-      setResult({ count: Number(raw.cantidad_registros), message: String(raw.mensaje_resultado || ''), summary, table: raw.curvas_acumuladas as CurvesFeatureSet })
+      const table = raw.curvas_acumuladas as CurvesFeatureSet
+      setResult({ count: Number(raw.cantidad_registros), message: String(raw.mensaje_resultado || ''), summary, table })
+      const firstType = table?.features?.[0]?.attributes
+      if (firstType) setSelectedCurveType(String(curveAttribute(firstType, 'TIPO') || ''))
       setStage('success'); setStatus('Curvas S procesadas correctamente.')
     } catch (processError) {
       console.error('[Curvas S] error:', processError); setStage('error'); setStatus('No fue posible procesar el Master Plan.')
@@ -351,7 +355,7 @@ const CurvesTab = ({ fallbackToken }: CurvesTabProps) => {
     }
   }
 
-  const reset = () => { setFile(null); setPublish(false); setStage('idle'); setStatus('Seleccione el Master Plan para comenzar.'); setValidation(''); setError(''); setResult(null); if (inputRef.current) inputRef.current.value = '' }
+  const reset = () => { setFile(null); setPublish(false); setStage('idle'); setStatus('Seleccione el Master Plan para comenzar.'); setValidation(''); setError(''); setResult(null); setSelectedCurveType(''); if (inputRef.current) inputRef.current.value = '' }
   const curveFields = ['TIPO', 'MES', 'PRESUPUESTO', 'REAL', 'AÑO']
   const curveRows = result?.table?.features || []
   const curveAttribute = (attributes: Record<string, unknown>, name: string): unknown => {
@@ -379,6 +383,22 @@ const CurvesTab = ({ fallbackToken }: CurvesTabProps) => {
     link.download = `${(file?.name || 'curvas_s').replace(/\.xlsx$/i, '')}_Curvas_S.csv`
     document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url)
   }
+  const monthOrder = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+  const curveTypes = Array.from(new Set(curveRows.map(feature => String(curveAttribute(feature.attributes || {}, 'TIPO'))))).filter(Boolean)
+  const activeCurveType = selectedCurveType || curveTypes[0] || ''
+  const chartRows = curveRows
+    .filter(feature => String(curveAttribute(feature.attributes || {}, 'TIPO')) === activeCurveType)
+    .sort((a, b) => monthOrder.indexOf(String(curveAttribute(a.attributes || {}, 'MES')).trim()) - monthOrder.indexOf(String(curveAttribute(b.attributes || {}, 'MES')).trim()))
+  const chartValues = chartRows.flatMap(feature => [Number(curveAttribute(feature.attributes || {}, 'PRESUPUESTO')), Number(curveAttribute(feature.attributes || {}, 'REAL'))]).filter(Number.isFinite)
+  const chartMax = Math.max(...chartValues, 1)
+  const chartWidth = 620; const chartHeight = 230; const chartPadding = { left: 54, right: 18, top: 18, bottom: 35 }
+  const chartX = (index: number) => chartPadding.left + index * ((chartWidth - chartPadding.left - chartPadding.right) / 11)
+  const chartY = (value: number) => chartPadding.top + (chartHeight - chartPadding.top - chartPadding.bottom) * (1 - value / chartMax)
+  const chartPath = (field: string) => chartRows.map((feature, index) => `${index === 0 ? 'M' : 'L'} ${chartX(index)} ${chartY(Number(curveAttribute(feature.attributes || {}, field)) || 0)}`).join(' ')
+  const lastChartRow = chartRows[chartRows.length - 1]?.attributes || {}
+  const lastBudget = Number(curveAttribute(lastChartRow, 'PRESUPUESTO')) || 0
+  const lastReal = Number(curveAttribute(lastChartRow, 'REAL')) || 0
+  const compliance = lastBudget ? lastReal / lastBudget * 100 : 0
   const size = file ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : ''
   return <main className="excel-uploader__content excel-uploader__curves">
     <div className="excel-uploader__steps"><span className={file ? 'is-active' : ''}><i>1</i>Archivo</span><span className={validation ? 'is-active' : ''}><i>2</i>Validación</span><span className={busy || stage === 'success' ? 'is-active' : ''}><i>3</i>Procesamiento</span></div>
@@ -392,6 +412,18 @@ const CurvesTab = ({ fallbackToken }: CurvesTabProps) => {
     {error && <div className="excel-uploader__alert excel-uploader__alert--error"><strong>No fue posible validar o procesar</strong><span>{error}</span></div>}
     {validation && !error && <div className="excel-uploader__alert excel-uploader__alert--success"><strong>Master Plan válido</strong><span>{validation}</span></div>}
     {result && <section className="excel-uploader__result"><div className="excel-uploader__success-icon">✓</div><div className="excel-uploader__result-copy"><span>Proceso completado</span><h3>{result.count?.toLocaleString('es-CL')} registros</h3><p>{result.message}</p><p className="excel-uploader__map-message">{publish ? 'La tabla Curvas_S fue actualizada en la geodatabase.' : 'Resultado generado sin modificar Curvas_S.'}</p>{curveRows.length > 0 && <button type="button" className="excel-uploader__export" onClick={exportCurvesCsv}>Exportar CSV</button>}</div></section>}
+    {chartRows.length > 0 && <section className="excel-uploader__chart">
+      <div className="excel-uploader__chart-head"><div><strong>Avance acumulado</strong><small>Presupuesto versus real por mes</small></div><select value={activeCurveType} onChange={event => setSelectedCurveType(event.target.value)} aria-label="Seleccionar tipo de curva">{curveTypes.map(type => <option key={type} value={type}>{type}</option>)}</select></div>
+      <div className="excel-uploader__chart-kpis"><div><span>Presupuesto</span><strong>{lastBudget.toLocaleString('es-CL', { maximumFractionDigits: 2 })}</strong></div><div><span>Real</span><strong>{lastReal.toLocaleString('es-CL', { maximumFractionDigits: 2 })}</strong></div><div><span>Cumplimiento</span><strong>{compliance.toLocaleString('es-CL', { maximumFractionDigits: 1 })}%</strong></div></div>
+      <div className="excel-uploader__chart-scroll"><svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} role="img" aria-label={`Curva acumulada para ${activeCurveType}`}>
+        {[0, .25, .5, .75, 1].map(ratio => <g key={ratio}><line x1={chartPadding.left} y1={chartY(chartMax * ratio)} x2={chartWidth - chartPadding.right} y2={chartY(chartMax * ratio)} className="grid" /><text x={chartPadding.left - 8} y={chartY(chartMax * ratio) + 3} textAnchor="end">{Math.round(chartMax * ratio).toLocaleString('es-CL')}</text></g>)}
+        {chartRows.map((feature, index) => <text key={index} x={chartX(index)} y={chartHeight - 12} textAnchor="middle">{String(curveAttribute(feature.attributes || {}, 'MES')).trim()}</text>)}
+        <path d={chartPath('PRESUPUESTO')} className="budget-line" />
+        <path d={chartPath('REAL')} className="real-line" />
+        {chartRows.map((feature, index) => <g key={`points-${index}`}><circle cx={chartX(index)} cy={chartY(Number(curveAttribute(feature.attributes || {}, 'PRESUPUESTO')) || 0)} r="3" className="budget-point"><title>{`Presupuesto ${String(curveAttribute(feature.attributes || {}, 'MES')).trim()}: ${formatCurveValue('PRESUPUESTO', curveAttribute(feature.attributes || {}, 'PRESUPUESTO'))}`}</title></circle><circle cx={chartX(index)} cy={chartY(Number(curveAttribute(feature.attributes || {}, 'REAL')) || 0)} r="3" className="real-point"><title>{`Real ${String(curveAttribute(feature.attributes || {}, 'MES')).trim()}: ${formatCurveValue('REAL', curveAttribute(feature.attributes || {}, 'REAL'))}`}</title></circle></g>)}
+      </svg></div>
+      <div className="excel-uploader__chart-legend"><span className="budget">Presupuesto acumulado</span><span className="real">Real acumulado</span></div>
+    </section>}
     {curveRows.length > 0 && <section className="excel-uploader__table-result" aria-label="Resultado Curvas S">
       <div className="excel-uploader__table-head"><div><strong>Vista previa de Curvas_S</strong><small>{curveRows.length} registros · Desplace para revisar</small></div><button type="button" onClick={exportCurvesCsv}>Descargar CSV</button></div>
       <div className="excel-uploader__table-scroll"><table><thead><tr>{curveFields.map(name => <th key={name}>{name}</th>)}</tr></thead><tbody>{curveRows.map((feature, index) => <tr key={index}>{curveFields.map(name => <td key={name}>{formatCurveValue(name, curveAttribute(feature.attributes || {}, name))}</td>)}</tr>)}</tbody></table></div>
