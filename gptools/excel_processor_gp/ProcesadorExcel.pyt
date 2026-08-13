@@ -5,6 +5,14 @@ import json
 import os
 import sys
 
+# fastexcel convierte mediante Arrow. Cargar estas DLL antes de ArcPy evita
+# conflictos de resolución de DLL observados en el ambiente de ArcGIS Pro.
+try:
+    import fastexcel  # noqa: F401
+    import pyarrow  # noqa: F401
+except ImportError:
+    pass
+
 import arcpy
 
 

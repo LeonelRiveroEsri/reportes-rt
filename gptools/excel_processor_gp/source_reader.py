@@ -63,6 +63,16 @@ def _coordinate_text(value) -> str:
         return str(value).strip()
 
 
+def _normalize_tricono(value):
+    """Evita diferencias '60'/'60.0' entre motores para el campo texto."""
+    if pd.isna(value) or str(value).strip() == "":
+        return pd.NA
+    try:
+        return str(float(value))
+    except (TypeError, ValueError):
+        return str(value).strip()
+
+
 def _read_coordinate_csv(path: str) -> pd.DataFrame:
     csv_path = Path(path).expanduser().resolve()
     if not csv_path.is_file() or csv_path.suffix.lower() != ".csv":
@@ -78,11 +88,44 @@ def _read_coordinate_csv(path: str) -> pd.DataFrame:
     raise ValueError(f"No fue posible leer el CSV SNDTGIS_ACQ: {last_error}")
 
 
-def read_source_inputs(workbook_path: str, coordinate_csv_path: str) -> Tuple[pd.DataFrame, Dict[str, object]]:
-    """Replica las dos uniones y el reemplazo de coordenadas del notebook original."""
-    workbook = Path(workbook_path).expanduser().resolve()
-    if not workbook.is_file() or workbook.suffix.lower() != ".xlsx":
-        raise ValueError("Seleccione un libro Excel válido con extensión .xlsx.")
+def _frame_from_header_row(raw: pd.DataFrame, required_columns, source: str) -> pd.DataFrame:
+    """Ubica el encabezado real en las primeras filas devueltas por fastexcel."""
+    required = set(required_columns)
+    for row_number in range(min(10, len(raw))):
+        values = [str(value).strip() if not pd.isna(value) else "" for value in raw.iloc[row_number]]
+        if required.issubset(set(values)):
+            frame = raw.iloc[row_number + 1:].copy()
+            frame.columns = [value or f"__empty_{index}" for index, value in enumerate(values)]
+            return frame.reset_index(drop=True)
+    raise ValueError(f"No se encontró el encabezado requerido en {source}.")
+
+
+def _read_workbook_sheets(workbook: Path):
+    """Usa fastexcel cuando está disponible y conserva openpyxl como respaldo."""
+    try:
+        import fastexcel
+
+        reader = fastexcel.read_excel(workbook)
+        missing_sheets = sorted(
+            {"CONSOLIDADO_PROGRAMA", "AVANCE MUESTRERA"} - set(reader.sheet_names)
+        )
+        if missing_sheets:
+            raise ValueError(f"El libro no contiene las hojas: {', '.join(missing_sheets)}")
+        consolidated_raw = _frame_from_header_row(
+            reader.load_sheet("CONSOLIDADO_PROGRAMA").to_pandas(),
+            CONSOLIDADO_MAP,
+            "CONSOLIDADO_PROGRAMA",
+        )
+        advance_raw = _frame_from_header_row(
+            reader.load_sheet("AVANCE MUESTRERA").to_pandas(),
+            AVANCE_MAP,
+            "AVANCE MUESTRERA",
+        )
+        return consolidated_raw, advance_raw, "fastexcel"
+    except Exception:
+        # Un libro con estructuras no soportadas por fastexcel no debe impedir
+        # la ejecución del servicio. openpyxl conserva la compatibilidad total.
+        pass
 
     with pd.ExcelFile(workbook, engine="openpyxl") as excel:
         required = {"CONSOLIDADO_PROGRAMA", "AVANCE MUESTRERA"}
@@ -91,6 +134,16 @@ def read_source_inputs(workbook_path: str, coordinate_csv_path: str) -> Tuple[pd
             raise ValueError(f"El libro no contiene las hojas: {', '.join(missing_sheets)}")
         consolidated_raw = pd.read_excel(excel, "CONSOLIDADO_PROGRAMA", header=3)
         advance_raw = pd.read_excel(excel, "AVANCE MUESTRERA", header=1)
+    return consolidated_raw, advance_raw, "openpyxl"
+
+
+def read_source_inputs(workbook_path: str, coordinate_csv_path: str) -> Tuple[pd.DataFrame, Dict[str, object]]:
+    """Replica las dos uniones y el reemplazo de coordenadas del notebook original."""
+    workbook = Path(workbook_path).expanduser().resolve()
+    if not workbook.is_file() or workbook.suffix.lower() != ".xlsx":
+        raise ValueError("Seleccione un libro Excel válido con extensión .xlsx.")
+
+    consolidated_raw, advance_raw, excel_reader = _read_workbook_sheets(workbook)
     coordinates_raw = _read_coordinate_csv(coordinate_csv_path)
 
     _validate_columns(consolidated_raw, CONSOLIDADO_MAP, "CONSOLIDADO_PROGRAMA")
@@ -138,9 +191,12 @@ def read_source_inputs(workbook_path: str, coordinate_csv_path: str) -> Tuple[pd
     for field in NUMERIC_FIELDS:
         merged[field] = pd.to_numeric(merged[field], errors="coerce")
     for field in DATE_FIELDS:
-        merged[field] = pd.to_datetime(merged[field], dayfirst=True, errors="coerce")
+        merged[field] = pd.to_datetime(
+            merged[field], format="mixed", dayfirst=True, errors="coerce"
+        )
     for field in TEXT_FIELDS:
         merged[field] = merged[field].astype("string").str.strip().replace("", pd.NA).str.slice(0, 255)
+    merged["av_tricono"] = merged["av_tricono"].map(_normalize_tricono).astype("string")
 
     # Regla de negocio: el tipo de perforación nunca se entrega nulo.
     # Aplica también a cadenas vacías o con solo espacios, normalizadas arriba.
@@ -161,5 +217,6 @@ def read_source_inputs(workbook_path: str, coordinate_csv_path: str) -> Tuple[pd
         "coincidencias_avance": int(merged["av_programa"].notna().sum()),
         "descartados_geometria": len(discarded_ids),
         "sondajes_descartados": discarded_ids,
+        "lector_excel": excel_reader,
     }
     return merged[OUTPUT_FIELDS].copy(), metrics

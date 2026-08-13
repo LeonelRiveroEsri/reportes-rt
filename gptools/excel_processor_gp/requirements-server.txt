@@ -1,0 +1,3 @@
+# Instalar en el ambiente Python asignado al GPServer.
+# La herramienta conserva fallback automatico a openpyxl si no esta disponible.
+fastexcel==0.16.0
