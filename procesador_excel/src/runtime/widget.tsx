@@ -49,6 +49,11 @@ interface FeatureSetValue {
   features?: Array<{ geometry?: Record<string, unknown>, attributes?: Record<string, unknown> }>
 }
 
+interface CurvesFeatureSet {
+  fields?: Array<{ name: string, alias?: string, type?: string }>
+  features?: Array<{ attributes?: Record<string, unknown> }>
+}
+
 const ARCGIS_FIELD_TYPES: Record<string, string> = {
   esriFieldTypeOID: 'oid',
   esriFieldTypeString: 'string',
@@ -249,7 +254,7 @@ const CurvesTab = ({ fallbackToken }: CurvesTabProps) => {
   const [status, setStatus] = React.useState('Seleccione el Master Plan para comenzar.')
   const [validation, setValidation] = React.useState('')
   const [error, setError] = React.useState('')
-  const [result, setResult] = React.useState<{ count?: number, message?: string, summary?: Record<string, unknown> } | null>(null)
+  const [result, setResult] = React.useState<{ count?: number, message?: string, summary?: Record<string, unknown>, table?: CurvesFeatureSet } | null>(null)
   const taskUrl = CURVES_SUBMIT_URL.replace(/\/submitJob\/?$/i, '')
   const gpServerUrl = taskUrl.replace(/\/GPServer\/.*$/i, '/GPServer')
   const busy = ['validating', 'uploading', 'submitting', 'processing'].includes(stage)
@@ -334,11 +339,11 @@ const CurvesTab = ({ fallbackToken }: CurvesTabProps) => {
         await wait(1500); job = await requestJson<JobResponse>(`${taskUrl}/jobs/${encodeURIComponent(submitted.jobId)}`)
       }
       setStatus('Recuperando resumen de la carga…')
-      const names = ['cantidad_registros', 'mensaje_resultado', 'resumen_json']
+      const names = ['curvas_acumuladas', 'cantidad_registros', 'mensaje_resultado', 'resumen_json']
       const outputs = await Promise.all(names.map(async name => [name, (await requestJson<ResultResponse>(`${taskUrl}/jobs/${encodeURIComponent(submitted.jobId)}/results/${name}`)).value] as [string, unknown]))
       const raw = Object.fromEntries(outputs); let summary: Record<string, unknown>
       if (typeof raw.resumen_json === 'string') { try { summary = JSON.parse(raw.resumen_json) } catch (_) { /* sin resumen estructurado */ } }
-      setResult({ count: Number(raw.cantidad_registros), message: String(raw.mensaje_resultado || ''), summary })
+      setResult({ count: Number(raw.cantidad_registros), message: String(raw.mensaje_resultado || ''), summary, table: raw.curvas_acumuladas as CurvesFeatureSet })
       setStage('success'); setStatus('Curvas S procesadas correctamente.')
     } catch (processError) {
       console.error('[Curvas S] error:', processError); setStage('error'); setStatus('No fue posible procesar el Master Plan.')
@@ -347,6 +352,33 @@ const CurvesTab = ({ fallbackToken }: CurvesTabProps) => {
   }
 
   const reset = () => { setFile(null); setPublish(false); setStage('idle'); setStatus('Seleccione el Master Plan para comenzar.'); setValidation(''); setError(''); setResult(null); if (inputRef.current) inputRef.current.value = '' }
+  const curveFields = ['TIPO', 'MES', 'PRESUPUESTO', 'REAL', 'AÑO']
+  const curveRows = result?.table?.features || []
+  const curveAttribute = (attributes: Record<string, unknown>, name: string): unknown => {
+    const actual = Object.keys(attributes || {}).find(key => key.toUpperCase() === name.toUpperCase())
+    return actual ? attributes[actual] : ''
+  }
+  const formatCurveValue = (name: string, value: unknown): string => {
+    if (value === null || value === undefined) return ''
+    if (name === 'PRESUPUESTO' || name === 'REAL') {
+      const number = Number(value)
+      return Number.isFinite(number) ? number.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : String(value)
+    }
+    return String(value)
+  }
+  const exportCurvesCsv = () => {
+    if (!curveRows.length) return
+    const escape = (value: unknown) => {
+      const text = String(value ?? '').replace(/"/g, '""')
+      return /[;"\r\n]/.test(text) ? `"${text}"` : text
+    }
+    const rows = curveRows.map(feature => curveFields.map(name => escape(curveAttribute(feature.attributes || {}, name))).join(';'))
+    const csv = `\uFEFF${curveFields.join(';')}\r\n${rows.join('\r\n')}`
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+    const link = document.createElement('a'); link.href = url
+    link.download = `${(file?.name || 'curvas_s').replace(/\.xlsx$/i, '')}_Curvas_S.csv`
+    document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url)
+  }
   const size = file ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : ''
   return <main className="excel-uploader__content excel-uploader__curves">
     <div className="excel-uploader__steps"><span className={file ? 'is-active' : ''}><i>1</i>Archivo</span><span className={validation ? 'is-active' : ''}><i>2</i>Validación</span><span className={busy || stage === 'success' ? 'is-active' : ''}><i>3</i>Procesamiento</span></div>
@@ -359,7 +391,11 @@ const CurvesTab = ({ fallbackToken }: CurvesTabProps) => {
     {(busy || stage === 'success') && <div className="excel-uploader__progress"><div><span>{status}</span><strong>{progress}%</strong></div><div className="excel-uploader__track"><i style={{ width: `${progress}%` }} /></div></div>}
     {error && <div className="excel-uploader__alert excel-uploader__alert--error"><strong>No fue posible validar o procesar</strong><span>{error}</span></div>}
     {validation && !error && <div className="excel-uploader__alert excel-uploader__alert--success"><strong>Master Plan válido</strong><span>{validation}</span></div>}
-    {result && <section className="excel-uploader__result"><div className="excel-uploader__success-icon">✓</div><div className="excel-uploader__result-copy"><span>Proceso completado</span><h3>{result.count?.toLocaleString('es-CL')} registros</h3><p>{result.message}</p><p className="excel-uploader__map-message">{publish ? 'La tabla Curvas_S fue actualizada en la geodatabase.' : 'Resultado generado sin modificar Curvas_S.'}</p></div></section>}
+    {result && <section className="excel-uploader__result"><div className="excel-uploader__success-icon">✓</div><div className="excel-uploader__result-copy"><span>Proceso completado</span><h3>{result.count?.toLocaleString('es-CL')} registros</h3><p>{result.message}</p><p className="excel-uploader__map-message">{publish ? 'La tabla Curvas_S fue actualizada en la geodatabase.' : 'Resultado generado sin modificar Curvas_S.'}</p>{curveRows.length > 0 && <button type="button" className="excel-uploader__export" onClick={exportCurvesCsv}>Exportar CSV</button>}</div></section>}
+    {curveRows.length > 0 && <section className="excel-uploader__table-result" aria-label="Resultado Curvas S">
+      <div className="excel-uploader__table-head"><div><strong>Vista previa de Curvas_S</strong><small>{curveRows.length} registros · Desplace para revisar</small></div><button type="button" onClick={exportCurvesCsv}>Descargar CSV</button></div>
+      <div className="excel-uploader__table-scroll"><table><thead><tr>{curveFields.map(name => <th key={name}>{name}</th>)}</tr></thead><tbody>{curveRows.map((feature, index) => <tr key={index}>{curveFields.map(name => <td key={name}>{formatCurveValue(name, curveAttribute(feature.attributes || {}, name))}</td>)}</tr>)}</tbody></table></div>
+    </section>}
     <div className="excel-uploader__section-head excel-uploader__section-head--mode"><h3>2. Modo de ejecución</h3><small>Publicación opcional</small></div>
     <label className={`excel-uploader__publish-option${publish ? ' is-selected' : ''}`}><input type="checkbox" checked={publish} onChange={event => setPublish(event.target.checked)} disabled={busy} /><span><strong>Publicar en Curvas_S</strong><small>Reemplaza los 60 registros de la tabla. Sin marcar, solo valida y genera el resultado temporal.</small></span></label>
     <div className="excel-uploader__actions"><button type="button" className="excel-uploader__primary" onClick={run} disabled={!file || busy}>{busy ? <><i className="excel-uploader__spinner" />Procesando…</> : publish ? 'Procesar y publicar' : 'Procesar sin publicar'}</button><button type="button" onClick={reset} disabled={busy || !file}>Limpiar</button></div>
