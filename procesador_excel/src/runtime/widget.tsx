@@ -951,7 +951,9 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
         </div>
       </main>}
 
-      {activeTab === 'curvas' && <CurvesTab fallbackToken={props.config.fallbackToken} />}
+      <div className={activeTab === 'curvas' ? 'excel-uploader__tab-panel is-active' : 'excel-uploader__tab-panel'} aria-hidden={activeTab !== 'curvas'}>
+        <CurvesTab fallbackToken={props.config.fallbackToken} />
+      </div>
 
       <footer>La información se transmite de forma segura al servicio de geoprocesamiento AMSA.</footer>
       {props.useMapWidgetIds?.[0] && <JimuMapViewComponent
