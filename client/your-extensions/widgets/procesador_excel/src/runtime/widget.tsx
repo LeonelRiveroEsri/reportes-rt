@@ -92,6 +92,7 @@ const COLLAR_GDB_LABELS: Record<string, string> = Object.fromEntries(
 )
 
 const DEFAULT_SUBMIT_URL = 'https://sig.aminerals.cl/vector/rest/services/ProcesarExcel/GPServer/Procesar%20archivo%20Excel/submitJob'
+const CURVES_SUBMIT_URL = 'https://sig.aminerals.cl/server/rest/services/ProcesarCurvasS/GPServer/Procesar%20Master%20Plan%20%20%20Curvas%20S/submitJob'
 const MAX_FILE_SIZE = 25 * 1024 * 1024
 const wait = async (milliseconds: number) => await new Promise(resolve => setTimeout(resolve, milliseconds))
 
@@ -210,7 +211,163 @@ const validateCoordinateCsv = async (candidate: File): Promise<string> => {
   return `SNDTGIS_ACQ: ${dataRows.length} registros`
 }
 
+const validateCurvesWorkbook = async (candidate: File): Promise<string> => {
+  let workbook: XLSX.WorkBook
+  try {
+    workbook = XLSX.read(await candidate.arrayBuffer(), { type: 'array', cellDates: true })
+  } catch (_) {
+    throw new Error('El archivo no pudo abrirse como un libro XLSX válido.')
+  }
+  const sheet = workbook.Sheets.MLP_
+  if (!sheet) throw new Error('El libro no contiene la hoja obligatoria MLP_.')
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null, raw: false })
+  const types: string[] = []
+  for (let row = 0; row < rows.length - 2; row++) {
+    for (let column = 0; column < (rows[row]?.length || 0); column++) {
+      const title = normalizeCell(rows[row]?.[column])
+      if (!title.startsWith('Detalle Mensual')) continue
+      if (normalizeCell(rows[row + 1]?.[column]) !== 'Presupuesto' || normalizeCell(rows[row + 2]?.[column]) !== 'Real') continue
+      const type = title.split(/\r?\n/, 2)[1]?.trim()
+      if (type) types.push(type)
+    }
+  }
+  const expected = ['Geológicos', 'Geometalúrgicos', 'EVU + Tigresas', 'Geotecnia & Estructural', 'Hidrogeológico']
+  const missing = expected.filter(type => !types.includes(type))
+  if (missing.length) throw new Error(`La hoja MLP_ no contiene los bloques requeridos: ${missing.join(', ')}.`)
+  return `MLP_: ${expected.length} tipos · 12 meses · 60 registros acumulados`
+}
+
+interface CurvesTabProps {
+  fallbackToken?: string
+}
+
+const CurvesTab = ({ fallbackToken }: CurvesTabProps) => {
+  const inputRef = React.useRef<HTMLInputElement>(null)
+  const [file, setFile] = React.useState<File | null>(null)
+  const [publish, setPublish] = React.useState(false)
+  const [stage, setStage] = React.useState<ProcessStage>('idle')
+  const [status, setStatus] = React.useState('Seleccione el Master Plan para comenzar.')
+  const [validation, setValidation] = React.useState('')
+  const [error, setError] = React.useState('')
+  const [result, setResult] = React.useState<{ count?: number, message?: string, summary?: Record<string, unknown> } | null>(null)
+  const taskUrl = CURVES_SUBMIT_URL.replace(/\/submitJob\/?$/i, '')
+  const gpServerUrl = taskUrl.replace(/\/GPServer\/.*$/i, '/GPServer')
+  const busy = ['validating', 'uploading', 'submitting', 'processing'].includes(stage)
+  const progress = stage === 'validating' ? 15 : stage === 'uploading' ? 30 : stage === 'submitting' ? 50 : stage === 'processing' ? 75 : stage === 'success' ? 100 : 0
+
+  const tokens = React.useCallback(() => {
+    const manager = SessionManager.getInstance()
+    const session = manager.getSessionByUrl(CURVES_SUBMIT_URL) || manager.getMainSession()
+    const values: Array<string | undefined> = []
+    if (session?.token) values.push(session.token)
+    if (fallbackToken && fallbackToken !== session?.token) values.push(fallbackToken)
+    values.push(undefined)
+    return values
+  }, [fallbackToken])
+
+  const request = React.useCallback(async <T,>(url: string, bodyFactory: (token?: string) => FormData | URLSearchParams): Promise<T> => {
+    let last: Error = null
+    for (const token of tokens()) {
+      try {
+        const body = bodyFactory(token)
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: body instanceof URLSearchParams ? { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' } : undefined,
+          body: body instanceof URLSearchParams ? body.toString() : body
+        })
+        if (!response.ok) throw new Error(`El servidor respondió HTTP ${response.status}.`)
+        const data = await response.json() as T & { error?: ArcGISError }
+        if (data.error) throw new Error([data.error.message, ...(data.error.details || [])].filter(Boolean).join(' '))
+        return data
+      } catch (requestError) {
+        last = requestError instanceof Error ? requestError : new Error('No fue posible consultar el servicio.')
+      }
+    }
+    throw last || new Error('No hay una sesión disponible para acceder al servicio.')
+  }, [tokens])
+
+  const requestJson = React.useCallback(async <T,>(url: string) => await request<T>(url, token => {
+    const params = new URLSearchParams({ f: 'json' }); if (token) params.set('token', token); return params
+  }), [request])
+
+  const selectFile = async (candidate?: File) => {
+    setError(''); setValidation(''); setResult(null)
+    if (!candidate) return
+    if (!candidate.name.toLowerCase().endsWith('.xlsx')) { setFile(null); setError('Seleccione un archivo con extensión .xlsx.'); return }
+    if (candidate.size > MAX_FILE_SIZE) { setFile(null); setError('El archivo supera el máximo permitido de 25 MB.'); return }
+    setStage('validating'); setStatus('Validando hoja MLP_ y bloques del Master Plan…')
+    try {
+      const summary = await validateCurvesWorkbook(candidate)
+      setFile(candidate); setValidation(summary); setStage('idle'); setStatus('Archivo validado y preparado para procesar.')
+    } catch (validationError) {
+      setFile(null); setStage('error'); setStatus('El archivo no cumple el formato requerido.')
+      setError(validationError instanceof Error ? validationError.message : 'No fue posible validar el Master Plan.')
+      if (inputRef.current) inputRef.current.value = ''
+    }
+  }
+
+  const run = async () => {
+    if (!file || busy) return
+    setError(''); setResult(null)
+    try {
+      setStage('uploading'); setStatus('Cargando Master Plan al servidor…')
+      const upload = await request<UploadResponse>(`${gpServerUrl}/uploads/upload`, token => {
+        const form = new FormData(); form.append('f', 'json'); form.append('file', file, file.name)
+        form.append('description', `Master Plan cargado desde Experience Builder: ${file.name}`)
+        if (token) form.append('token', token); return form
+      })
+      const itemId = upload.item?.itemID || upload.item?.itemId
+      if (!itemId) throw new Error('El servidor no devolvió el itemID del archivo.')
+      setStage('submitting'); setStatus('Iniciando cálculo de curvas acumuladas…')
+      const submitted = await request<JobResponse>(CURVES_SUBMIT_URL, token => {
+        const params = new URLSearchParams({ f: 'json', archivo_excel: JSON.stringify({ itemID: itemId }), publicar_en_curvas_s: publish ? 'true' : 'false' })
+        if (token) params.set('token', token); return params
+      })
+      if (!submitted.jobId) throw new Error('El geoproceso no devolvió un jobId.')
+      setStage('processing'); setStatus('Procesando cinco tipos y doce meses…')
+      let job = submitted; const deadline = Date.now() + 5 * 60 * 1000
+      while (job.jobStatus !== 'esriJobSucceeded') {
+        if (['esriJobFailed', 'esriJobCancelled', 'esriJobTimedOut'].includes(job.jobStatus || '')) {
+          throw new Error(job.messages?.map(message => message.description).filter(Boolean).join(' ') || 'El geoproceso no pudo completarse.')
+        }
+        if (Date.now() >= deadline) throw new Error('El procesamiento superó el tiempo máximo de espera.')
+        await wait(1500); job = await requestJson<JobResponse>(`${taskUrl}/jobs/${encodeURIComponent(submitted.jobId)}`)
+      }
+      setStatus('Recuperando resumen de la carga…')
+      const names = ['cantidad_registros', 'mensaje_resultado', 'resumen_json']
+      const outputs = await Promise.all(names.map(async name => [name, (await requestJson<ResultResponse>(`${taskUrl}/jobs/${encodeURIComponent(submitted.jobId)}/results/${name}`)).value] as [string, unknown]))
+      const raw = Object.fromEntries(outputs); let summary: Record<string, unknown>
+      if (typeof raw.resumen_json === 'string') { try { summary = JSON.parse(raw.resumen_json) } catch (_) { /* sin resumen estructurado */ } }
+      setResult({ count: Number(raw.cantidad_registros), message: String(raw.mensaje_resultado || ''), summary })
+      setStage('success'); setStatus('Curvas S procesadas correctamente.')
+    } catch (processError) {
+      console.error('[Curvas S] error:', processError); setStage('error'); setStatus('No fue posible procesar el Master Plan.')
+      setError(processError instanceof Error ? processError.message : 'Ocurrió un error inesperado.')
+    }
+  }
+
+  const reset = () => { setFile(null); setPublish(false); setStage('idle'); setStatus('Seleccione el Master Plan para comenzar.'); setValidation(''); setError(''); setResult(null); if (inputRef.current) inputRef.current.value = '' }
+  const size = file ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : ''
+  return <main className="excel-uploader__content excel-uploader__curves">
+    <div className="excel-uploader__steps"><span className={file ? 'is-active' : ''}><i>1</i>Archivo</span><span className={validation ? 'is-active' : ''}><i>2</i>Validación</span><span className={busy || stage === 'success' ? 'is-active' : ''}><i>3</i>Procesamiento</span></div>
+    <div className="excel-uploader__section-head"><h3>1. Master Plan MLP</h3><small>Hoja MLP_</small></div>
+    <div className={`excel-uploader__dropzone excel-uploader__dropzone--curves${file ? ' has-file' : ''}`} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); if (!busy) selectFile(event.dataTransfer.files?.[0]) }} onClick={() => !busy && inputRef.current?.click()} role="button" tabIndex={0}>
+      <input ref={inputRef} type="file" accept=".xlsx" onChange={event => selectFile(event.target.files?.[0])} disabled={busy} />
+      <b className="excel-uploader__file-role">Master Plan</b><div className="excel-uploader__file-icon">X</div>
+      {file ? <><strong>{file.name}</strong><span>{size} · Archivo XLSX</span><small>Haga clic para reemplazar</small></> : <><strong>Seleccione Master Plan MLP 2026.xlsx</strong><span>o arrastre el archivo aquí</span><small>Se procesará directamente la hoja MLP_</small></>}
+    </div>
+    {(busy || stage === 'success') && <div className="excel-uploader__progress"><div><span>{status}</span><strong>{progress}%</strong></div><div className="excel-uploader__track"><i style={{ width: `${progress}%` }} /></div></div>}
+    {error && <div className="excel-uploader__alert excel-uploader__alert--error"><strong>No fue posible validar o procesar</strong><span>{error}</span></div>}
+    {validation && !error && <div className="excel-uploader__alert excel-uploader__alert--success"><strong>Master Plan válido</strong><span>{validation}</span></div>}
+    {result && <section className="excel-uploader__result"><div className="excel-uploader__success-icon">✓</div><div className="excel-uploader__result-copy"><span>Proceso completado</span><h3>{result.count?.toLocaleString('es-CL')} registros</h3><p>{result.message}</p><p className="excel-uploader__map-message">{publish ? 'La tabla Curvas_S fue actualizada en la geodatabase.' : 'Resultado generado sin modificar Curvas_S.'}</p></div></section>}
+    <div className="excel-uploader__section-head excel-uploader__section-head--mode"><h3>2. Modo de ejecución</h3><small>Publicación opcional</small></div>
+    <label className={`excel-uploader__publish-option${publish ? ' is-selected' : ''}`}><input type="checkbox" checked={publish} onChange={event => setPublish(event.target.checked)} disabled={busy} /><span><strong>Publicar en Curvas_S</strong><small>Reemplaza los 60 registros de la tabla. Sin marcar, solo valida y genera el resultado temporal.</small></span></label>
+    <div className="excel-uploader__actions"><button type="button" className="excel-uploader__primary" onClick={run} disabled={!file || busy}>{busy ? <><i className="excel-uploader__spinner" />Procesando…</> : publish ? 'Procesar y publicar' : 'Procesar sin publicar'}</button><button type="button" onClick={reset} disabled={busy || !file}>Limpiar</button></div>
+  </main>
+}
+
 const Widget = (props: AllWidgetProps<IMConfig>) => {
+  const [activeTab, setActiveTab] = React.useState<'sondajes' | 'curvas'>('sondajes')
   const inputRef = React.useRef<HTMLInputElement>(null)
   const coordinateInputRef = React.useRef<HTMLInputElement>(null)
   const resultLayerRef = React.useRef<any>(null)
@@ -615,7 +772,16 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
 
       </header>
 
-      <main className="excel-uploader__content">
+      <nav className="excel-uploader__tabs" aria-label="Tipos de procesamiento">
+        <button type="button" className={activeTab === 'sondajes' ? 'is-active' : ''} onClick={() => setActiveTab('sondajes')}>
+          <span>Sondajes</span><small>Collar_Recomendado</small>
+        </button>
+        <button type="button" className={activeTab === 'curvas' ? 'is-active' : ''} onClick={() => setActiveTab('curvas')}>
+          <span>Curvas S</span><small>Master Plan acumulado</small>
+        </button>
+      </nav>
+
+      {activeTab === 'sondajes' && <main className="excel-uploader__content">
         <div className="excel-uploader__steps" aria-label="Etapas del procesamiento">
           <span className={file || coordinateFile ? 'is-active' : ''}><i>1</i>Archivos</span>
           <span className={validationMessage && !error ? 'is-active' : ''}><i>2</i>Validación</span>
@@ -715,7 +881,9 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
           </button>
           <button type="button" onClick={reset} disabled={isBusy || (!file && !coordinateFile && !result && !error)}>Limpiar</button>
         </div>
-      </main>
+      </main>}
+
+      {activeTab === 'curvas' && <CurvesTab fallbackToken={props.config.fallbackToken} />}
 
       <footer>La información se transmite de forma segura al servicio de geoprocesamiento AMSA.</footer>
       {props.useMapWidgetIds?.[0] && <JimuMapViewComponent
