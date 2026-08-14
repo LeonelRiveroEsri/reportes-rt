@@ -1,3 +1,5 @@
 # Instalar en el ambiente Python asignado al GPServer.
 # La herramienta conserva fallback automatico a openpyxl si no esta disponible.
 fastexcel==0.16.0
+polars==1.35.2
+pyproj==3.6.1

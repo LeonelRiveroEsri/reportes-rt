@@ -1,4 +1,5 @@
 {
   "submitJobUrl": "https://sig.aminerals.cl/vector/rest/services/ProcesarExcel/GPServer/Procesar%20archivo%20Excel/submitJob",
+  "publishSubmitJobUrl": "https://sig.aminerals.cl/vector/rest/services/PublicarResultadoValidado/GPServer/Publicar%20resultado%20validado/submitJob",
   "fallbackToken": "__EXB_FALLBACK_TOKEN__"
 }

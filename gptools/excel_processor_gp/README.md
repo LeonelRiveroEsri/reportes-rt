@@ -61,6 +61,20 @@ clic derecho en el resultado y seleccione **Share As Web Tool**. Al publicarse,
 el parámetro `DEFile` podrá recibir el Excel cargado por un cliente web y las
 salidas serán serializables por el servicio de geoprocesamiento.
 
+### Ambiente de ArcGIS Server
+
+Instale en el ambiente Python asociado al servicio las versiones indicadas en
+`requirements-server.txt`. `fastexcel` evita recorrer los estilos de todo el
+libro y `pyproj` aplica en bloque la transformacion oficial
+`PSAD_1956_To_WGS_1984_16` (WKID 6972). Si alguna dependencia no esta
+disponible, la herramienta conserva los respaldos compatibles `openpyxl` y
+`arcpy.PointGeometry.projectAs`.
+
+La publicacion comprueba el esquema y el bloqueo del destino antes de truncar,
+crea un respaldo temporal y lo restaura si falla la insercion o la validacion
+del conteo. El `Resumen JSON` incluye el motor utilizado y los tiempos de
+lectura, normalizacion, proyeccion, salida y publicacion.
+
 ## Ejecutar pruebas
 
 Con el ambiente Python de ArcGIS Pro:

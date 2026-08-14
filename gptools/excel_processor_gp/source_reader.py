@@ -3,6 +3,7 @@
 
 from pathlib import Path
 import re
+import time
 from typing import Dict, Tuple
 
 import pandas as pd
@@ -89,9 +90,9 @@ def _read_coordinate_csv(path: str) -> pd.DataFrame:
 
 
 def _frame_from_header_row(raw: pd.DataFrame, required_columns, source: str) -> pd.DataFrame:
-    """Ubica el encabezado real en las primeras filas devueltas por fastexcel."""
+    """Ubica el encabezado real sin depender de una fila fija del libro."""
     required = set(required_columns)
-    for row_number in range(min(10, len(raw))):
+    for row_number in range(min(50, len(raw))):
         values = [str(value).strip() if not pd.isna(value) else "" for value in raw.iloc[row_number]]
         if required.issubset(set(values)):
             frame = raw.iloc[row_number + 1:].copy()
@@ -102,39 +103,59 @@ def _frame_from_header_row(raw: pd.DataFrame, required_columns, source: str) -> 
 
 def _read_workbook_sheets(workbook: Path):
     """Usa fastexcel cuando está disponible y conserva openpyxl como respaldo."""
+    fast_error = None
     try:
         import fastexcel
 
         reader = fastexcel.read_excel(workbook)
+
+        def fast_frame(sheet_name):
+            sheet = reader.load_sheet(sheet_name, header_row=None)
+            try:
+                # Evita PyArrow: sus DLL pueden entrar en conflicto con las
+                # bibliotecas ya cargadas por ArcGIS Pro o ArcGIS Server.
+                import polars  # noqa: F401
+                frame = sheet.to_polars()
+                return pd.DataFrame(frame.to_dict(as_series=False))
+            except ImportError:
+                return sheet.to_pandas()
         missing_sheets = sorted(
             {"CONSOLIDADO_PROGRAMA", "AVANCE MUESTRERA"} - set(reader.sheet_names)
         )
         if missing_sheets:
             raise ValueError(f"El libro no contiene las hojas: {', '.join(missing_sheets)}")
         consolidated_raw = _frame_from_header_row(
-            reader.load_sheet("CONSOLIDADO_PROGRAMA").to_pandas(),
+            fast_frame("CONSOLIDADO_PROGRAMA"),
             CONSOLIDADO_MAP,
             "CONSOLIDADO_PROGRAMA",
         )
         advance_raw = _frame_from_header_row(
-            reader.load_sheet("AVANCE MUESTRERA").to_pandas(),
+            fast_frame("AVANCE MUESTRERA"),
             AVANCE_MAP,
             "AVANCE MUESTRERA",
         )
-        return consolidated_raw, advance_raw, "fastexcel"
-    except Exception:
+        return consolidated_raw, advance_raw, "fastexcel", None
+    except Exception as error:
         # Un libro con estructuras no soportadas por fastexcel no debe impedir
         # la ejecución del servicio. openpyxl conserva la compatibilidad total.
-        pass
+        fast_error = f"{type(error).__name__}: {error}"
 
     with pd.ExcelFile(workbook, engine="openpyxl") as excel:
         required = {"CONSOLIDADO_PROGRAMA", "AVANCE MUESTRERA"}
         missing_sheets = sorted(required - set(excel.sheet_names))
         if missing_sheets:
             raise ValueError(f"El libro no contiene las hojas: {', '.join(missing_sheets)}")
-        consolidated_raw = pd.read_excel(excel, "CONSOLIDADO_PROGRAMA", header=3)
-        advance_raw = pd.read_excel(excel, "AVANCE MUESTRERA", header=1)
-    return consolidated_raw, advance_raw, "openpyxl"
+        consolidated_raw = _frame_from_header_row(
+            pd.read_excel(excel, "CONSOLIDADO_PROGRAMA", header=None),
+            CONSOLIDADO_MAP,
+            "CONSOLIDADO_PROGRAMA",
+        )
+        advance_raw = _frame_from_header_row(
+            pd.read_excel(excel, "AVANCE MUESTRERA", header=None),
+            AVANCE_MAP,
+            "AVANCE MUESTRERA",
+        )
+    return consolidated_raw, advance_raw, "openpyxl", fast_error
 
 
 def read_source_inputs(workbook_path: str, coordinate_csv_path: str) -> Tuple[pd.DataFrame, Dict[str, object]]:
@@ -143,8 +164,14 @@ def read_source_inputs(workbook_path: str, coordinate_csv_path: str) -> Tuple[pd
     if not workbook.is_file() or workbook.suffix.lower() != ".xlsx":
         raise ValueError("Seleccione un libro Excel válido con extensión .xlsx.")
 
-    consolidated_raw, advance_raw, excel_reader = _read_workbook_sheets(workbook)
+    started = time.perf_counter()
+    read_excel_started = time.perf_counter()
+    consolidated_raw, advance_raw, excel_reader, excel_fallback_reason = _read_workbook_sheets(workbook)
+    excel_seconds = time.perf_counter() - read_excel_started
+    read_csv_started = time.perf_counter()
     coordinates_raw = _read_coordinate_csv(coordinate_csv_path)
+    csv_seconds = time.perf_counter() - read_csv_started
+    normalization_started = time.perf_counter()
 
     _validate_columns(consolidated_raw, CONSOLIDADO_MAP, "CONSOLIDADO_PROGRAMA")
     _validate_columns(advance_raw, AVANCE_MAP, "AVANCE MUESTRERA")
@@ -218,5 +245,12 @@ def read_source_inputs(workbook_path: str, coordinate_csv_path: str) -> Tuple[pd
         "descartados_geometria": len(discarded_ids),
         "sondajes_descartados": discarded_ids,
         "lector_excel": excel_reader,
+        "motivo_respaldo_excel": excel_fallback_reason,
+        "tiempos_segundos": {
+            "lectura_excel": round(excel_seconds, 3),
+            "lectura_csv": round(csv_seconds, 3),
+            "normalizacion": round(time.perf_counter() - normalization_started, 3),
+            "total_lectura_normalizacion": round(time.perf_counter() - started, 3),
+        },
     }
     return merged[OUTPUT_FIELDS].copy(), metrics

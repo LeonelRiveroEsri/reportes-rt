@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import re
+import time
 from typing import Dict, Tuple
 from uuid import uuid4
 
@@ -195,16 +196,90 @@ def _value(value):
     return value
 
 
+def prepare_projected_rows(data: pd.DataFrame):
+    """Convierte coordenadas en bloque y deja las filas listas para InsertCursor.
+
+    Se usa exactamente PSAD56 -> WGS84 (16). Si pyproj no esta disponible o no
+    expone esa operacion, se conserva el calculo ArcPy projectAs como respaldo.
+    La cota se mantiene sin cambios, igual que en la herramienta Project usada
+    previamente.
+    """
+    started = time.perf_counter()
+    field_positions = {name: index for index, name in enumerate(OUTPUT_FIELDS)}
+    east_position = field_positions["r_este"]
+    north_position = field_positions["r_norte"]
+    elevation_position = field_positions["r_cota"]
+    values_rows = [list(values) for values in data[OUTPUT_FIELDS].itertuples(index=False, name=None)]
+    engine = "arcpy_projectAs"
+    transformed = None
+    fallback_reason = None
+    try:
+        from pyproj import CRS
+        from pyproj.transformer import TransformerGroup
+
+        group = TransformerGroup(
+            CRS.from_epsg(SOURCE_WKID), CRS.from_epsg(TARGET_WKID), always_xy=True
+        )
+        matches = [
+            transformer for transformer in group.transformers
+            if "PSAD56 to WGS 84 (16)" in transformer.description
+        ]
+        if len(matches) != 1:
+            raise RuntimeError("No se encontro de forma univoca PSAD56 to WGS 84 (16).")
+        east = np.asarray([row[east_position] for row in values_rows], dtype="float64")
+        north = np.asarray([row[north_position] for row in values_rows], dtype="float64")
+        transformed = matches[0].transform(east, north)
+        engine = "pyproj_vectorial"
+    except Exception as error:
+        # La publicacion debe seguir siendo ejecutable en ambientes Server sin
+        # pyproj o con una base EPSG diferente; ArcPy conserva el mismo datum.
+        transformed = None
+        fallback_reason = f"{type(error).__name__}: {error}"
+
+    source = arcpy.SpatialReference(SOURCE_WKID)
+    target = arcpy.SpatialReference(TARGET_WKID)
+    prepared = []
+    for index, values in enumerate(values_rows):
+        z_value = float(values[elevation_position])
+        if transformed is not None:
+            x_value = float(transformed[0][index])
+            y_value = float(transformed[1][index])
+            geometry = arcpy.PointGeometry(
+                arcpy.Point(x_value, y_value, z_value), target, has_z=True
+            )
+        else:
+            source_geometry = arcpy.PointGeometry(
+                arcpy.Point(values[east_position], values[north_position], z_value),
+                source,
+                has_z=True,
+            )
+            geometry = source_geometry.projectAs(target, TRANSFORMATION)
+            point = geometry.firstPoint
+            x_value, y_value = point.X, point.Y
+        attributes = [_value(value) for value in values]
+        attributes[east_position] = x_value
+        attributes[north_position] = y_value
+        attributes[elevation_position] = z_value
+        prepared.append([geometry] + attributes)
+    return prepared, {
+        "motor_proyeccion": engine,
+        "transformacion": TRANSFORMATION,
+        "transformacion_wkid": TRANSFORMATION_WKID,
+        "segundos": round(time.perf_counter() - started, 3),
+        "motivo_respaldo": fallback_reason,
+    }
+
+
 def build_feature_class(
     data: pd.DataFrame,
     output_workspace: str,
     template_features: str = None,
+    prepared_rows=None,
 ) -> str:
     """Proyecta cada fila en memoria e inserta una sola feature class WGS84."""
     suffix = uuid4().hex[:10]
     output_name = f"sondajes_resultado_{suffix}"
     output_fc = str(Path(output_workspace) / output_name)
-    source = arcpy.SpatialReference(SOURCE_WKID)
     target = arcpy.SpatialReference(TARGET_WKID)
 
     selected_template = None
@@ -227,29 +302,57 @@ def build_feature_class(
         # no está accesible desde la cuenta de ArcGIS Server.
         _add_output_fields(output_fc)
 
-    field_positions = {name: index for index, name in enumerate(OUTPUT_FIELDS)}
-    east_position = field_positions["r_este"]
-    north_position = field_positions["r_norte"]
-    elevation_position = field_positions["r_cota"]
+    if prepared_rows is None:
+        prepared_rows, _ = prepare_projected_rows(data)
     with arcpy.da.InsertCursor(output_fc, ["SHAPE@"] + OUTPUT_FIELDS) as cursor:
-        for values in data[OUTPUT_FIELDS].itertuples(index=False, name=None):
-            source_geometry = arcpy.PointGeometry(
-                arcpy.Point(
-                    values[east_position],
-                    values[north_position],
-                    values[elevation_position],
-                ),
-                source,
-                has_z=True,
-            )
-            projected_geometry = source_geometry.projectAs(target, TRANSFORMATION)
-            projected_point = projected_geometry.firstPoint
-            attributes = [_value(value) for value in values]
-            attributes[east_position] = projected_point.X
-            attributes[north_position] = projected_point.Y
-            attributes[elevation_position] = projected_point.Z
-            cursor.insertRow([projected_geometry] + attributes)
+        for row in prepared_rows:
+            cursor.insertRow(row)
     return output_fc
+
+
+def replace_target_with_rows(prepared_rows, target_features: str) -> Dict[str, object]:
+    """Reemplaza el destino directamente y restaura el respaldo ante una falla."""
+    result = {
+        "solicitado": True, "publicado": False,
+        "estado": "destino_no_disponible", "destino": target_features, "registros": 0,
+    }
+    if not arcpy.Exists(target_features):
+        return result
+    description = arcpy.Describe(target_features)
+    if description.shapeType.lower() != "point":
+        raise ValueError("La feature class de destino no es de tipo punto.")
+    if description.spatialReference.factoryCode != TARGET_WKID:
+        raise ValueError(f"La feature class de destino usa WKID {description.spatialReference.factoryCode}; se esperaba {TARGET_WKID}.")
+    target_names = {field.name.lower() for field in arcpy.ListFields(target_features)}
+    missing = [field for field in OUTPUT_FIELDS if field.lower() not in target_names]
+    if missing:
+        raise ValueError(f"La feature class de destino no contiene: {', '.join(missing)}")
+    if hasattr(arcpy, "TestSchemaLock") and not arcpy.TestSchemaLock(target_features):
+        raise RuntimeError("Collar_Recomendado esta bloqueada por otro proceso o usuario.")
+
+    backup = str(Path(arcpy.env.scratchGDB) / f"collar_backup_{uuid4().hex[:10]}")
+    cursor_fields = ["SHAPE@"] + OUTPUT_FIELDS
+    arcpy.management.CopyFeatures(target_features, backup)
+    try:
+        arcpy.management.TruncateTable(target_features)
+        with arcpy.da.InsertCursor(target_features, cursor_fields) as writer:
+            for row in prepared_rows:
+                writer.insertRow(row)
+        final_count = int(arcpy.management.GetCount(target_features)[0])
+        if final_count != len(prepared_rows):
+            raise RuntimeError(f"Validacion de carga fallida: esperados={len(prepared_rows)}, destino={final_count}.")
+        result.update({"publicado": True, "estado": "publicado", "registros": final_count})
+        return result
+    except Exception:
+        arcpy.management.TruncateTable(target_features)
+        with arcpy.da.SearchCursor(backup, cursor_fields) as rows:
+            with arcpy.da.InsertCursor(target_features, cursor_fields) as writer:
+                for row in rows:
+                    writer.insertRow(row)
+        raise
+    finally:
+        if arcpy.Exists(backup):
+            arcpy.management.Delete(backup)
 
 
 def replace_target_with_cursor(source_features: str, target_features: str) -> Dict[str, object]:

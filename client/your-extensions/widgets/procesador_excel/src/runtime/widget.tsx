@@ -40,6 +40,7 @@ interface ProcessingResult {
   raw: Record<string, unknown>
   featureSet?: FeatureSetValue
   mapMessage?: string
+  published?: boolean
 }
 
 interface FeatureSetValue {
@@ -98,6 +99,7 @@ const COLLAR_GDB_LABELS: Record<string, string> = Object.fromEntries(
 
 const DEFAULT_SUBMIT_URL = 'https://sig.aminerals.cl/vector/rest/services/ProcesarExcel/GPServer/Procesar%20archivo%20Excel/submitJob'
 const CURVES_SUBMIT_URL = 'https://sig.aminerals.cl/server/rest/services/ProcesarCurvasS/GPServer/Procesar%20Master%20Plan%20%20%20Curvas%20S/submitJob'
+const DEFAULT_PUBLISH_SUBMIT_URL = 'https://sig.aminerals.cl/vector/rest/services/PublicarResultadoValidado/GPServer/Publicar%20resultado%20validado/submitJob'
 const MAX_FILE_SIZE = 25 * 1024 * 1024
 const wait = async (milliseconds: number) => await new Promise(resolve => setTimeout(resolve, milliseconds))
 
@@ -244,9 +246,10 @@ const validateCurvesWorkbook = async (candidate: File): Promise<string> => {
 
 interface CurvesTabProps {
   fallbackToken?: string
+  publishSubmitJobUrl?: string
 }
 
-const CurvesTab = ({ fallbackToken }: CurvesTabProps) => {
+const CurvesTab = ({ fallbackToken, publishSubmitJobUrl = DEFAULT_PUBLISH_SUBMIT_URL }: CurvesTabProps) => {
   const inputRef = React.useRef<HTMLInputElement>(null)
   const [file, setFile] = React.useState<File | null>(null)
   const [publish, setPublish] = React.useState(false)
@@ -254,10 +257,11 @@ const CurvesTab = ({ fallbackToken }: CurvesTabProps) => {
   const [status, setStatus] = React.useState('Seleccione el Master Plan para comenzar.')
   const [validation, setValidation] = React.useState('')
   const [error, setError] = React.useState('')
-  const [result, setResult] = React.useState<{ count?: number, message?: string, summary?: Record<string, unknown>, table?: CurvesFeatureSet } | null>(null)
+  const [result, setResult] = React.useState<{ count?: number, message?: string, summary?: Record<string, unknown>, table?: CurvesFeatureSet, published?: boolean } | null>(null)
   const [selectedCurveType, setSelectedCurveType] = React.useState('')
   const taskUrl = CURVES_SUBMIT_URL.replace(/\/submitJob\/?$/i, '')
   const gpServerUrl = taskUrl.replace(/\/GPServer\/.*$/i, '/GPServer')
+  const publishTaskUrl = publishSubmitJobUrl.replace(/\/submitJob\/?$/i, '')
   const busy = ['validating', 'uploading', 'submitting', 'processing'].includes(stage)
   const progress = stage === 'validating' ? 15 : stage === 'uploading' ? 30 : stage === 'submitting' ? 50 : stage === 'processing' ? 75 : stage === 'success' ? 100 : 0
 
@@ -296,6 +300,40 @@ const CurvesTab = ({ fallbackToken }: CurvesTabProps) => {
     const params = new URLSearchParams({ f: 'json' }); if (token) params.set('token', token); return params
   }), [request])
 
+  const publishPreparedCurves = async () => {
+    if (!result?.table?.features?.length || busy) return
+    setError('')
+    try {
+      setStage('submitting'); setStatus('Enviando el resultado validado a Curvas_Sâ€¦')
+      const submitted = await request<JobResponse>(publishSubmitJobUrl, token => {
+        const params = new URLSearchParams({
+          f: 'json',
+          tipo_resultado: 'Curvas S',
+          curvas_s_procesadas: JSON.stringify(result.table)
+        })
+        if (token) params.set('token', token)
+        return params
+      })
+      if (!submitted.jobId) throw new Error('La publicaciÃ³n no devolviÃ³ un jobId.')
+      setStage('processing'); setStatus('Publicando los 60 registros ya procesadosâ€¦')
+      let job = submitted; const deadline = Date.now() + 2 * 60 * 1000
+      while (job.jobStatus !== 'esriJobSucceeded') {
+        if (['esriJobFailed', 'esriJobCancelled', 'esriJobTimedOut'].includes(job.jobStatus || '')) {
+          throw new Error(job.messages?.map(message => message.description).filter(Boolean).join(' ') || 'No fue posible publicar Curvas S.')
+        }
+        if (Date.now() >= deadline) throw new Error('La publicaciÃ³n superÃ³ el tiempo mÃ¡ximo de espera.')
+        await wait(1000); job = await requestJson<JobResponse>(`${publishTaskUrl}/jobs/${encodeURIComponent(submitted.jobId)}`)
+      }
+      const countOutput = await requestJson<ResultResponse>(`${publishTaskUrl}/jobs/${encodeURIComponent(submitted.jobId)}/results/cantidad_publicada`)
+      const messageOutput = await requestJson<ResultResponse>(`${publishTaskUrl}/jobs/${encodeURIComponent(submitted.jobId)}/results/mensaje_resultado`)
+      setResult({ ...result, count: Number(countOutput.value), message: String(messageOutput.value || ''), published: true })
+      setStage('success'); setStatus('Resultado validado publicado en Curvas_S.')
+    } catch (publishError) {
+      setStage('error'); setStatus('No fue posible publicar el resultado validado.')
+      setError(publishError instanceof Error ? publishError.message : 'OcurriÃ³ un error durante la publicaciÃ³n.')
+    }
+  }
+
   const selectFile = async (candidate?: File) => {
     setError(''); setValidation(''); setResult(null)
     if (!candidate) return
@@ -314,6 +352,10 @@ const CurvesTab = ({ fallbackToken }: CurvesTabProps) => {
 
   const run = async () => {
     if (!file || busy) return
+    if (publish && result?.table?.features?.length && !result.published) {
+      await publishPreparedCurves()
+      return
+    }
     setError(''); setResult(null)
     try {
       setStage('uploading'); setStatus('Cargando Master Plan al servidor…')
@@ -345,7 +387,7 @@ const CurvesTab = ({ fallbackToken }: CurvesTabProps) => {
       const raw = Object.fromEntries(outputs); let summary: Record<string, unknown>
       if (typeof raw.resumen_json === 'string') { try { summary = JSON.parse(raw.resumen_json) } catch (_) { /* sin resumen estructurado */ } }
       const table = raw.curvas_acumuladas as CurvesFeatureSet
-      setResult({ count: Number(raw.cantidad_registros), message: String(raw.mensaje_resultado || ''), summary, table })
+      setResult({ count: Number(raw.cantidad_registros), message: String(raw.mensaje_resultado || ''), summary, table, published: publish })
       const firstType = table?.features?.[0]?.attributes
       if (firstType) setSelectedCurveType(String(curveAttribute(firstType, 'TIPO') || ''))
       setStage('success'); setStatus('Curvas S procesadas correctamente.')
@@ -411,7 +453,7 @@ const CurvesTab = ({ fallbackToken }: CurvesTabProps) => {
     {(busy || stage === 'success') && <div className="excel-uploader__progress"><div><span>{status}</span><strong>{progress}%</strong></div><div className="excel-uploader__track"><i style={{ width: `${progress}%` }} /></div></div>}
     {error && <div className="excel-uploader__alert excel-uploader__alert--error"><strong>No fue posible validar o procesar</strong><span>{error}</span></div>}
     {validation && !error && <div className="excel-uploader__alert excel-uploader__alert--success"><strong>Master Plan válido</strong><span>{validation}</span></div>}
-    {result && <section className="excel-uploader__result"><div className="excel-uploader__success-icon">✓</div><div className="excel-uploader__result-copy"><span>Proceso completado</span><h3>{result.count?.toLocaleString('es-CL')} registros</h3><p>{result.message}</p><p className="excel-uploader__map-message">{publish ? 'La tabla Curvas_S fue actualizada en la geodatabase.' : 'Resultado generado sin modificar Curvas_S.'}</p>{curveRows.length > 0 && <button type="button" className="excel-uploader__export" onClick={exportCurvesCsv}>Exportar CSV</button>}</div></section>}
+    {result && <section className="excel-uploader__result"><div className="excel-uploader__success-icon">✓</div><div className="excel-uploader__result-copy"><span>Proceso completado</span><h3>{result.count?.toLocaleString('es-CL')} registros</h3><p>{result.message}</p><p className="excel-uploader__map-message">{result.published ? 'La tabla Curvas_S fue actualizada en la geodatabase.' : 'Resultado generado sin modificar Curvas_S.'}</p>{curveRows.length > 0 && <button type="button" className="excel-uploader__export" onClick={exportCurvesCsv}>Exportar CSV</button>}</div></section>}
     {chartRows.length > 0 && <section className="excel-uploader__chart">
       <div className="excel-uploader__chart-head"><div><strong>Avance acumulado</strong><small>Presupuesto versus real por mes</small></div><select value={activeCurveType} onChange={event => setSelectedCurveType(event.target.value)} aria-label="Seleccionar tipo de curva">{curveTypes.map(type => <option key={type} value={type}>{type}</option>)}</select></div>
       <div className="excel-uploader__chart-kpis"><div><span>Presupuesto</span><strong>{lastBudget.toLocaleString('es-CL', { maximumFractionDigits: 2 })}</strong></div><div><span>Real</span><strong>{lastReal.toLocaleString('es-CL', { maximumFractionDigits: 2 })}</strong></div><div><span>Cumplimiento</span><strong>{compliance.toLocaleString('es-CL', { maximumFractionDigits: 1 })}%</strong></div></div>
@@ -430,7 +472,7 @@ const CurvesTab = ({ fallbackToken }: CurvesTabProps) => {
     </section>}
     <div className="excel-uploader__section-head excel-uploader__section-head--mode"><h3>2. Modo de ejecución</h3><small>Publicación opcional</small></div>
     <label className={`excel-uploader__publish-option${publish ? ' is-selected' : ''}`}><input type="checkbox" checked={publish} onChange={event => setPublish(event.target.checked)} disabled={busy} /><span><strong>Publicar en Curvas_S</strong><small>Reemplaza los 60 registros de la tabla. Sin marcar, solo valida y genera el resultado temporal.</small></span></label>
-    <div className="excel-uploader__actions"><button type="button" className="excel-uploader__primary" onClick={run} disabled={!file || busy}>{busy ? <><i className="excel-uploader__spinner" />Procesando…</> : publish ? 'Procesar y publicar' : 'Procesar sin publicar'}</button><button type="button" onClick={reset} disabled={busy || !file}>Limpiar</button></div>
+    <div className="excel-uploader__actions"><button type="button" className="excel-uploader__primary" onClick={run} disabled={!file || busy || Boolean(publish && result?.published)}>{busy ? <><i className="excel-uploader__spinner" />Procesando…</> : publish && result?.published ? 'Publicado en Curvas_S' : publish && result?.table?.features?.length ? 'Publicar resultado validado' : publish ? 'Procesar y publicar' : 'Procesar sin publicar'}</button><button type="button" onClick={reset} disabled={busy || !file}>Limpiar</button></div>
   </main>
 }
 
@@ -450,12 +492,14 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   const [validationMessage, setValidationMessage] = React.useState('')
   const [result, setResult] = React.useState<ProcessingResult | null>(null)
   const submitJobUrl = props.config.submitJobUrl || DEFAULT_SUBMIT_URL
+  const publishSubmitJobUrl = props.config.publishSubmitJobUrl || DEFAULT_PUBLISH_SUBMIT_URL
   const taskUrl = submitJobUrl.replace(/\/submitJob\/?$/i, '')
+  const publishTaskUrl = publishSubmitJobUrl.replace(/\/submitJob\/?$/i, '')
   const gpServerUrl = taskUrl.replace(/\/GPServer\/.*$/i, '/GPServer')
 
   const getTokens = React.useCallback((): Array<string | undefined> => {
     const manager = SessionManager.getInstance()
-    const session = manager.getSessionByUrl(submitJobUrl) || manager.getMainSession()
+    const session = manager.getSessionByUrl(submitJobUrl) || manager.getSessionByUrl(publishSubmitJobUrl) || manager.getMainSession()
     const sessionToken = session?.token
     const fallbackToken = props.config.fallbackToken
     const candidates: Array<string | undefined> = []
@@ -464,7 +508,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     // Permite probar servicios públicos aunque un token local haya vencido.
     candidates.push(undefined)
     return candidates
-  }, [props.config.fallbackToken, submitJobUrl])
+  }, [props.config.fallbackToken, submitJobUrl, publishSubmitJobUrl])
 
   const errorText = (error?: ArcGISError) => {
     const details = error?.details?.filter(Boolean).join(' ')
@@ -657,8 +701,63 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     }
   }
 
+  const publishPreparedSondajes = async () => {
+    if (!result?.featureSet?.features?.length) return
+    setError('')
+    try {
+      setStage('submitting')
+      setStatus('Enviando el resultado validado a Collar_Recomendadoâ€¦')
+      const submitted = await requestForm<JobResponse>(publishSubmitJobUrl, token => {
+        const params = new URLSearchParams({
+          f: 'json',
+          tipo_resultado: 'Sondajes',
+          sondajes_procesados: JSON.stringify(result.featureSet)
+        })
+        if (token) params.set('token', token)
+        return params
+      })
+      if (!submitted.jobId) throw new Error('La publicaciÃ³n no devolviÃ³ un jobId.')
+      setStage('processing')
+      setStatus('Publicando los sondajes ya procesadosâ€¦')
+      let job = submitted
+      const deadline = Date.now() + 2 * 60 * 1000
+      while (job.jobStatus !== 'esriJobSucceeded') {
+        if (['esriJobFailed', 'esriJobCancelled', 'esriJobTimedOut'].includes(job.jobStatus || '')) {
+          const detail = job.messages?.map(item => item.description).filter(Boolean).join(' ')
+          throw new Error(detail || 'No fue posible publicar Collar_Recomendado.')
+        }
+        if (Date.now() >= deadline) throw new Error('La publicaciÃ³n superÃ³ el tiempo mÃ¡ximo de espera.')
+        await wait(1000)
+        job = await requestJson<JobResponse>(`${publishTaskUrl}/jobs/${encodeURIComponent(submitted.jobId)}`)
+      }
+      const countOutput = await requestJson<ResultResponse>(`${publishTaskUrl}/jobs/${encodeURIComponent(submitted.jobId)}/results/cantidad_publicada`)
+      const messageOutput = await requestJson<ResultResponse>(`${publishTaskUrl}/jobs/${encodeURIComponent(submitted.jobId)}/results/mensaje_resultado`)
+      if (resultLayerRef.current && jimuMapView?.view?.map) {
+        jimuMapView.view.map.remove(resultLayerRef.current)
+        resultLayerRef.current = null
+      }
+      setResult({
+        ...result,
+        recordCount: Number(countOutput.value),
+        message: String(messageOutput.value || ''),
+        mapMessage: 'El resultado validado fue publicado en Collar_Recomendado.',
+        published: true
+      })
+      setStage('success')
+      setStatus('Resultado validado publicado correctamente.')
+    } catch (publishError) {
+      setStage('error')
+      setStatus('No fue posible publicar el resultado validado.')
+      setError(publishError instanceof Error ? publishError.message : 'OcurriÃ³ un error durante la publicaciÃ³n.')
+    }
+  }
+
   const runProcess = async () => {
     if (!file || !coordinateFile || stage === 'uploading' || stage === 'submitting' || stage === 'processing') return
+    if (publishToGdb && result?.featureSet?.features?.length && !result.published) {
+      await publishPreparedSondajes()
+      return
+    }
     setError('')
     setResult(null)
 
@@ -745,7 +844,8 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
         message: typeof raw.mensaje_resultado === 'string' ? raw.mensaje_resultado : undefined,
         summary,
         raw,
-        featureSet
+        featureSet,
+        published: publishToGdb
       }
       finalResult.mapMessage = publishToGdb
         ? 'Los registros fueron enviados a Collar_Recomendado. No se agregó una capa temporal al mapa.'
@@ -944,15 +1044,15 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
         </label>
 
         <div className="excel-uploader__actions">
-          <button type="button" className="excel-uploader__primary" onClick={runProcess} disabled={!file || !coordinateFile || isBusy}>
-            {isBusy ? <><i className="excel-uploader__spinner" />{stage === 'validating' ? 'Validando…' : 'Procesando…'}</> : stage === 'error' && file ? 'Reintentar procesamiento' : publishToGdb ? 'Cargar en GDB' : 'Procesar y mostrar en mapa'}
+          <button type="button" className="excel-uploader__primary" onClick={runProcess} disabled={!file || !coordinateFile || isBusy || Boolean(publishToGdb && result?.published)}>
+            {isBusy ? <><i className="excel-uploader__spinner" />{stage === 'validating' ? 'Validando…' : 'Procesando…'}</> : publishToGdb && result?.published ? 'Publicado en Collar_Recomendado' : publishToGdb && result?.featureSet?.features?.length ? 'Publicar resultado validado' : stage === 'error' && file ? 'Reintentar procesamiento' : publishToGdb ? 'Procesar y publicar' : 'Procesar y mostrar en mapa'}
           </button>
           <button type="button" onClick={reset} disabled={isBusy || (!file && !coordinateFile && !result && !error)}>Limpiar</button>
         </div>
       </main>}
 
       <div className={activeTab === 'curvas' ? 'excel-uploader__tab-panel is-active' : 'excel-uploader__tab-panel'} aria-hidden={activeTab !== 'curvas'}>
-        <CurvesTab fallbackToken={props.config.fallbackToken} />
+        <CurvesTab fallbackToken={props.config.fallbackToken} publishSubmitJobUrl={publishSubmitJobUrl} />
       </div>
 
       <footer>La información se transmite de forma segura al servicio de geoprocesamiento AMSA.</footer>

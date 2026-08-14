@@ -4,6 +4,7 @@
 import json
 import os
 import sys
+import time
 
 # fastexcel convierte mediante Arrow. Cargar estas DLL antes de ArcPy evita
 # conflictos de resolución de DLL observados en el ambiente de ArcGIS Pro.
@@ -12,6 +13,16 @@ try:
     import pyarrow  # noqa: F401
 except ImportError:
     pass
+
+# Precargar PROJ antes de ArcPy evita que el proceso de geoprocesamiento de Pro
+# resuelva pyproj con un sys.path/DLL path ya modificado por ArcGIS.
+try:
+    import pyproj  # noqa: F401
+    from pyproj import CRS  # noqa: F401
+    from pyproj.transformer import TransformerGroup  # noqa: F401
+    PYPROJ_PRELOAD = f"disponible ({pyproj.__version__}) en {pyproj.__file__}"
+except ImportError as error:
+    PYPROJ_PRELOAD = f"no disponible: {type(error).__name__}: {error}"
 
 import arcpy
 
@@ -26,7 +37,8 @@ from excel_feature_builder import (
     TRANSFORMATION,
     TRANSFORMATION_WKID,
     build_feature_class,
-    replace_target_with_cursor,
+    prepare_projected_rows,
+    replace_target_with_rows,
 )
 from source_reader import read_source_inputs
 
@@ -132,6 +144,7 @@ class ProcesarExcel:
             parameters[1].setErrorMessage("Seleccione un archivo SNDTGIS_ACQ con extensión .csv.")
 
     def execute(self, parameters, messages):
+        total_started = time.perf_counter()
         input_path = parameters[0].valueAsText
         coordinate_path = parameters[1].valueAsText
         publish_requested = str(parameters[2].valueAsText or "false").lower() == "true"
@@ -139,12 +152,30 @@ class ProcesarExcel:
 
         try:
             arcpy.AddMessage("Procesando archivo Excel...")
+            arcpy.AddMessage(f"Python del proceso: {sys.executable}")
+            arcpy.AddMessage(f"Ambiente Python: {sys.prefix}")
+            arcpy.AddMessage(f"Diagnostico pyproj: {PYPROJ_PRELOAD}")
             arcpy.SetProgressorLabel("Validando archivo de entrada...")
             arcpy.SetProgressorPosition()
 
             arcpy.AddMessage("Leyendo CONSOLIDADO_PROGRAMA, AVANCE MUESTRERA y SNDTGIS_ACQ...")
             arcpy.SetProgressorLabel("Normalizando el libro maestro...")
+            stage_started = time.perf_counter()
             data, metrics = read_source_inputs(input_path, coordinate_path)
+            read_seconds = time.perf_counter() - stage_started
+            arcpy.AddMessage(
+                f"Motor de lectura Excel: {metrics.get('lector_excel', 'desconocido')}."
+            )
+            if metrics.get("lector_excel") == "fastexcel":
+                arcpy.AddMessage("fastexcel disponible y utilizado correctamente.")
+            else:
+                arcpy.AddMessage(
+                    "fastexcel no esta disponible o no pudo leer el libro; "
+                    "se utilizo openpyxl como respaldo."
+                )
+                arcpy.AddMessage(
+                    f"Detalle fastexcel: {metrics.get('motivo_respaldo_excel', 'sin detalle')}"
+                )
             arcpy.SetProgressorPosition()
 
             result_message = (
@@ -155,11 +186,24 @@ class ProcesarExcel:
                 "Proyectando geometrías PSAD56 en memoria e insertando la salida WGS84..."
             )
             output_workspace = arcpy.env.scratchGDB
+            prepared_rows, projection_metrics = prepare_projected_rows(data)
+            arcpy.AddMessage(
+                f"Motor de proyeccion: {projection_metrics['motor_proyeccion']} "
+                f"({projection_metrics['segundos']} s)."
+            )
+            if projection_metrics.get("motivo_respaldo"):
+                arcpy.AddMessage(
+                    f"pyproj no pudo utilizarse; detalle: "
+                    f"{projection_metrics['motivo_respaldo']}"
+                )
+            stage_started = time.perf_counter()
             output_features = build_feature_class(
                 data,
                 output_workspace,
                 template_features=TARGET_FEATURE_CLASS,
+                prepared_rows=prepared_rows,
             )
+            output_seconds = time.perf_counter() - stage_started
             publication = {
                 "solicitado": publish_requested,
                 "publicado": False,
@@ -170,13 +214,15 @@ class ProcesarExcel:
             if publish_requested:
                 arcpy.SetProgressorLabel("Actualizando Collar_Recomendado...")
                 try:
-                    publication = replace_target_with_cursor(output_features, TARGET_FEATURE_CLASS)
+                    stage_started = time.perf_counter()
+                    publication = replace_target_with_rows(prepared_rows, TARGET_FEATURE_CLASS)
+                    publication["segundos"] = round(time.perf_counter() - stage_started, 3)
                     if publication["publicado"]:
                         arcpy.AddMessage(
                             f"GDB actualizada: {publication['registros']} registros insertados."
                         )
                     else:
-                        arcpy.AddWarning(
+                        arcpy.AddMessage(
                             "No se encontró Collar_Recomendado desde la cuenta de ArcGIS Server. "
                             "Se conserva el resultado temporal y el job continúa."
                         )
@@ -185,11 +231,18 @@ class ProcesarExcel:
                         "estado": "error_publicacion",
                         "error": str(publication_error),
                     })
-                    arcpy.AddWarning(
+                    arcpy.AddMessage(
                         f"No fue posible actualizar la GDB: {publication_error}. "
                         "El layer temporal se devolverá normalmente."
                     )
             arcpy.SetProgressorPosition()
+            performance = {
+                "lectura_normalizacion": round(read_seconds, 3),
+                "proyeccion": projection_metrics,
+                "creacion_salida": round(output_seconds, 3),
+                "publicacion": publication.get("segundos", 0),
+                "total": round(time.perf_counter() - total_started, 3),
+            }
             result = {
                 "archivo": os.path.basename(input_path),
                 "archivo_coordenadas": os.path.basename(coordinate_path),
@@ -200,6 +253,7 @@ class ProcesarExcel:
                 "transformacion": TRANSFORMATION,
                 "transformacion_wkid": TRANSFORMATION_WKID,
                 "publicacion_gdb": publication,
+                "rendimiento": performance,
             }
             result_json = json.dumps(result, ensure_ascii=False, separators=(",", ":"))
 
@@ -207,6 +261,7 @@ class ProcesarExcel:
             arcpy.AddMessage(f"Cantidad de sondajes: {len(data)}")
             arcpy.AddMessage(f"Transformación: {TRANSFORMATION} (WKID {TRANSFORMATION_WKID})")
             arcpy.AddMessage("Procesamiento finalizado correctamente.")
+            arcpy.AddMessage(f"Tiempo total: {performance['total']} segundos.")
 
             # GPFeatureLayer requiere una capa real para que ArcGIS Pro la agregue
             # al mapa. Al publicar, ArcGIS Server serializa esta salida espacial.
