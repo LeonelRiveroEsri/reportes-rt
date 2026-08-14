@@ -246,10 +246,11 @@ const validateCurvesWorkbook = async (candidate: File): Promise<string> => {
 
 interface CurvesTabProps {
   fallbackToken?: string
+  curvesSubmitJobUrl?: string
   publishSubmitJobUrl?: string
 }
 
-const CurvesTab = ({ fallbackToken, publishSubmitJobUrl = DEFAULT_PUBLISH_SUBMIT_URL }: CurvesTabProps) => {
+const CurvesTab = ({ fallbackToken, curvesSubmitJobUrl = CURVES_SUBMIT_URL, publishSubmitJobUrl = DEFAULT_PUBLISH_SUBMIT_URL }: CurvesTabProps) => {
   const inputRef = React.useRef<HTMLInputElement>(null)
   const [file, setFile] = React.useState<File | null>(null)
   const [publish, setPublish] = React.useState(false)
@@ -259,7 +260,7 @@ const CurvesTab = ({ fallbackToken, publishSubmitJobUrl = DEFAULT_PUBLISH_SUBMIT
   const [error, setError] = React.useState('')
   const [result, setResult] = React.useState<{ count?: number, message?: string, summary?: Record<string, unknown>, table?: CurvesFeatureSet, published?: boolean } | null>(null)
   const [selectedCurveType, setSelectedCurveType] = React.useState('')
-  const taskUrl = CURVES_SUBMIT_URL.replace(/\/submitJob\/?$/i, '')
+  const taskUrl = curvesSubmitJobUrl.replace(/\/submitJob\/?$/i, '')
   const gpServerUrl = taskUrl.replace(/\/GPServer\/.*$/i, '/GPServer')
   const publishTaskUrl = publishSubmitJobUrl.replace(/\/submitJob\/?$/i, '')
   const busy = ['validating', 'uploading', 'submitting', 'processing'].includes(stage)
@@ -267,13 +268,13 @@ const CurvesTab = ({ fallbackToken, publishSubmitJobUrl = DEFAULT_PUBLISH_SUBMIT
 
   const tokens = React.useCallback(() => {
     const manager = SessionManager.getInstance()
-    const session = manager.getSessionByUrl(CURVES_SUBMIT_URL) || manager.getMainSession()
+    const session = manager.getSessionByUrl(curvesSubmitJobUrl) || manager.getSessionByUrl(publishSubmitJobUrl) || manager.getMainSession()
     const values: Array<string | undefined> = []
     if (session?.token) values.push(session.token)
     if (fallbackToken && fallbackToken !== session?.token) values.push(fallbackToken)
     values.push(undefined)
     return values
-  }, [fallbackToken])
+  }, [fallbackToken, curvesSubmitJobUrl, publishSubmitJobUrl])
 
   const request = React.useCallback(async <T,>(url: string, bodyFactory: (token?: string) => FormData | URLSearchParams): Promise<T> => {
     let last: Error = null
@@ -367,7 +368,7 @@ const CurvesTab = ({ fallbackToken, publishSubmitJobUrl = DEFAULT_PUBLISH_SUBMIT
       const itemId = upload.item?.itemID || upload.item?.itemId
       if (!itemId) throw new Error('El servidor no devolvió el itemID del archivo.')
       setStage('submitting'); setStatus('Iniciando cálculo de curvas acumuladas…')
-      const submitted = await request<JobResponse>(CURVES_SUBMIT_URL, token => {
+      const submitted = await request<JobResponse>(curvesSubmitJobUrl, token => {
         const params = new URLSearchParams({ f: 'json', archivo_excel: JSON.stringify({ itemID: itemId }), publicar_en_curvas_s: publish ? 'true' : 'false' })
         if (token) params.set('token', token); return params
       })
@@ -1052,7 +1053,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       </main>}
 
       <div className={activeTab === 'curvas' ? 'excel-uploader__tab-panel is-active' : 'excel-uploader__tab-panel'} aria-hidden={activeTab !== 'curvas'}>
-        <CurvesTab fallbackToken={props.config.fallbackToken} publishSubmitJobUrl={publishSubmitJobUrl} />
+        <CurvesTab fallbackToken={props.config.fallbackToken} curvesSubmitJobUrl={props.config.curvesSubmitJobUrl || CURVES_SUBMIT_URL} publishSubmitJobUrl={publishSubmitJobUrl} />
       </div>
 
       <footer>La información se transmite de forma segura al servicio de geoprocesamiento AMSA.</footer>

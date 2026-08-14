@@ -4,89 +4,76 @@ import { MapWidgetSelector } from 'jimu-ui/advanced/setting-components'
 import { IMConfig } from '../config'
 import './style.scss'
 
-const DEFAULT_SUBMIT_URL = 'https://sig.aminerals.cl/vector/rest/services/ProcesarExcel/GPServer/Procesar%20archivo%20Excel/submitJob'
+const DEFAULT_SONDAJES_URL = 'https://sig.aminerals.cl/vector/rest/services/ProcesarExcel/GPServer/Procesar%20archivo%20Excel/submitJob'
+const DEFAULT_CURVAS_URL = 'https://sig.aminerals.cl/server/rest/services/ProcesarCurvasS/GPServer/Procesar%20Master%20Plan%20%20%20Curvas%20S/submitJob'
 const DEFAULT_PUBLISH_URL = 'https://sig.aminerals.cl/vector/rest/services/PublicarResultadoValidado/GPServer/Publicar%20resultado%20validado/submitJob'
+const URL_PATTERN = /^https:\/\/.+\/GPServer\/.+\/submitJob\/?$/i
+
+interface ServiceFieldProps {
+  id: string
+  order: number
+  title: string
+  description: string
+  value: string
+  defaultValue: string
+  onChange: (value: string) => void
+}
+
+const ServiceField = ({ id, order, title, description, value, defaultValue, onChange }: ServiceFieldProps) => {
+  const normalized = value.trim()
+  const valid = URL_PATTERN.test(normalized)
+  return <div className="excel-uploader-setting__service">
+    <div className="excel-uploader-setting__service-head">
+      <i>{order}</i>
+      <div><strong>{title}</strong><small>{description}</small></div>
+      <span className={valid ? 'is-valid' : 'is-invalid'}>{valid ? 'Configurado' : 'Revisar'}</span>
+    </div>
+    <label htmlFor={id}>URL de submitJob</label>
+    <textarea
+      id={id}
+      value={value}
+      rows={4}
+      spellCheck={false}
+      placeholder={defaultValue}
+      onChange={event => onChange(event.target.value)}
+      onBlur={() => normalized && onChange(normalized.replace(/\/$/, ''))}
+    />
+    {!valid && normalized && <div className="excel-uploader-setting__error">
+      Debe usar HTTPS y terminar en <strong>/submitJob</strong>.
+    </div>}
+    <button type="button" className="excel-uploader-setting__restore" onClick={() => onChange(defaultValue)}>
+      Restaurar URL predeterminada
+    </button>
+  </div>
+}
 
 const Setting = (props: AllWidgetSettingProps<IMConfig>) => {
-  const value = props.config.submitJobUrl || ''
-  const normalized = value.trim()
-  const isValid = /^https:\/\/.+\/GPServer\/.+\/submitJob\/?$/i.test(normalized)
-  const publishValue = props.config.publishSubmitJobUrl || DEFAULT_PUBLISH_URL
-  const normalizedPublish = publishValue.trim()
-  const isPublishValid = /^https:\/\/.+\/GPServer\/.+\/submitJob\/?$/i.test(normalizedPublish)
-
-  const updateUrl = (submitJobUrl: string) => {
-    props.onSettingChange({
-      id: props.id,
-      config: props.config.set('submitJobUrl', submitJobUrl)
-    })
+  const updateConfig = (key: 'submitJobUrl' | 'curvesSubmitJobUrl' | 'publishSubmitJobUrl', value: string) => {
+    props.onSettingChange({ id: props.id, config: props.config.set(key, value) })
   }
 
-  const updatePublishUrl = (publishSubmitJobUrl: string) => {
-    props.onSettingChange({
-      id: props.id,
-      config: props.config.set('publishSubmitJobUrl', publishSubmitJobUrl)
-    })
-  }
+  return <div className="excel-uploader-setting jimu-widget-setting">
+    <section>
+      <span className="excel-uploader-setting__eyebrow">Visualización</span>
+      <h3>Mapa de resultados</h3>
+      <p>Seleccione el Map Widget donde se mostrarán temporalmente los sondajes procesados.</p>
+      <MapWidgetSelector
+        onSelect={useMapWidgetIds => props.onSettingChange({ id: props.id, useMapWidgetIds })}
+        useMapWidgetIds={props.useMapWidgetIds}
+      />
+    </section>
 
-  const updateMap = (useMapWidgetIds: string[]) => {
-    props.onSettingChange({ id: props.id, useMapWidgetIds })
-  }
+    <section>
+      <span className="excel-uploader-setting__eyebrow">Servicios de geoprocesamiento</span>
+      <h3>Conexiones de la solución</h3>
+      <p>Configure las tres tareas asíncronas utilizadas por las pestañas y por la publicación posterior a la revisión.</p>
+      <ServiceField id={`${props.id}-sondajes-url`} order={1} title="Procesamiento de Sondajes" description="Valida, normaliza y genera Collar_Recomendado." value={props.config.submitJobUrl || DEFAULT_SONDAJES_URL} defaultValue={DEFAULT_SONDAJES_URL} onChange={value => updateConfig('submitJobUrl', value)} />
+      <ServiceField id={`${props.id}-curvas-url`} order={2} title="Procesamiento de Curvas S" description="Calcula los 60 registros acumulados del Master Plan." value={props.config.curvesSubmitJobUrl || DEFAULT_CURVAS_URL} defaultValue={DEFAULT_CURVAS_URL} onChange={value => updateConfig('curvesSubmitJobUrl', value)} />
+      <ServiceField id={`${props.id}-publisher-url`} order={3} title="Publicación de resultados validados" description="Carga resultados revisados sin volver a procesarlos." value={props.config.publishSubmitJobUrl || DEFAULT_PUBLISH_URL} defaultValue={DEFAULT_PUBLISH_URL} onChange={value => updateConfig('publishSubmitJobUrl', value)} />
+    </section>
 
-  return (
-    <div className="excel-uploader-setting jimu-widget-setting">
-      <section>
-        <span className="excel-uploader-setting__eyebrow">Visualización</span>
-        <h3>Mapa de resultados</h3>
-        <p>Seleccione el Map Widget donde se agregarán los puntos procesados y sus ventanas emergentes.</p>
-        <MapWidgetSelector onSelect={updateMap} useMapWidgetIds={props.useMapWidgetIds} />
-      </section>
-      <section>
-        <span className="excel-uploader-setting__eyebrow">Servicio de geoprocesamiento</span>
-        <h3>Configuración de la GP Tool</h3>
-        <p>Ingrese la URL completa de la operación <code>submitJob</code> que procesará los archivos Excel.</p>
-
-        <label htmlFor={`${props.id}-gp-url`}>URL de la GP Tool</label>
-        <textarea
-          id={`${props.id}-gp-url`}
-          value={value}
-          rows={6}
-          spellCheck={false}
-          placeholder={DEFAULT_SUBMIT_URL}
-          onChange={event => updateUrl(event.target.value)}
-          onBlur={() => normalized && updateUrl(normalized.replace(/\/$/, ''))}
-        />
-
-        {normalized && !isValid && <div className="excel-uploader-setting__error">
-          La dirección debe usar HTTPS y terminar en <strong>/submitJob</strong>.
-        </div>}
-        {isValid && <div className="excel-uploader-setting__ok">URL válida para una tarea asíncrona.</div>}
-
-        <button type="button" onClick={() => updateUrl(DEFAULT_SUBMIT_URL)}>
-          Restaurar URL predeterminada
-        </button>
-
-        <label htmlFor={`${props.id}-publish-gp-url`}>URL de publicación de resultados</label>
-        <textarea
-          id={`${props.id}-publish-gp-url`}
-          value={publishValue}
-          rows={6}
-          spellCheck={false}
-          placeholder={DEFAULT_PUBLISH_URL}
-          onChange={event => updatePublishUrl(event.target.value)}
-          onBlur={() => normalizedPublish && updatePublishUrl(normalizedPublish.replace(/\/$/, ''))}
-        />
-        {normalizedPublish && !isPublishValid && <div className="excel-uploader-setting__error">
-          La URL de publicación debe usar HTTPS y terminar en <strong>/submitJob</strong>.
-        </div>}
-        {isPublishValid && <div className="excel-uploader-setting__ok">URL de publicación rápida válida.</div>}
-      </section>
-
-      <aside>
-        El widget intentará primero la sesión del usuario autenticado en Experience Builder y luego los métodos alternativos configurados.
-      </aside>
-    </div>
-  )
+    <aside><strong>Autenticación</strong>El widget utiliza primero la sesión activa del usuario en Experience Builder y conserva el token alternativo solo para pruebas controladas.</aside>
+  </div>
 }
 
 export default Setting
