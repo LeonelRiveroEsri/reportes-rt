@@ -1,5 +1,5 @@
 {
-  "submitJobUrl": "https://sig.aminerals.cl/vector/rest/services/ProcesarExcel/GPServer/Procesar%20archivo%20Excel/submitJob",
+  "submitJobUrl": "https://sig.aminerals.cl/server/rest/services/CargaSondajes/GPServer",
   "curvesSubmitJobUrl": "https://sig.aminerals.cl/server/rest/services/ProcesarCurvasS/GPServer/Procesar%20Master%20Plan%20%20%20Curvas%20S/submitJob",
   "publishSubmitJobUrl": "https://sig.aminerals.cl/vector/rest/services/PublicarResultadoValidado/GPServer/Publicar%20resultado%20validado/submitJob",
   "fallbackToken": "__EXB_FALLBACK_TOKEN__"

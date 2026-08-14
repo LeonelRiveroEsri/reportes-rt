@@ -2,6 +2,7 @@ import { React, AllWidgetProps, SessionManager } from 'jimu-core'
 import { JimuMapView, JimuMapViewComponent, loadArcGISJSAPIModules } from 'jimu-arcgis'
 import * as XLSX from 'xlsx'
 import { IMConfig } from '../config'
+import { GP_TASK_NAMES, toSubmitJobUrl } from '../service-url'
 import './style.scss'
 
 type ProcessStage = 'idle' | 'validating' | 'uploading' | 'submitting' | 'processing' | 'success' | 'error'
@@ -250,7 +251,9 @@ interface CurvesTabProps {
   publishSubmitJobUrl?: string
 }
 
-const CurvesTab = ({ fallbackToken, curvesSubmitJobUrl = CURVES_SUBMIT_URL, publishSubmitJobUrl = DEFAULT_PUBLISH_SUBMIT_URL }: CurvesTabProps) => {
+const CurvesTab = ({ fallbackToken, curvesSubmitJobUrl: configuredCurvesUrl = CURVES_SUBMIT_URL, publishSubmitJobUrl: configuredPublishUrl = DEFAULT_PUBLISH_SUBMIT_URL }: CurvesTabProps) => {
+  const curvesSubmitJobUrl = toSubmitJobUrl(configuredCurvesUrl, GP_TASK_NAMES.curvas)
+  const publishSubmitJobUrl = toSubmitJobUrl(configuredPublishUrl, GP_TASK_NAMES.publicacion)
   const inputRef = React.useRef<HTMLInputElement>(null)
   const [file, setFile] = React.useState<File | null>(null)
   const [publish, setPublish] = React.useState(false)
@@ -492,8 +495,8 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   const [error, setError] = React.useState('')
   const [validationMessage, setValidationMessage] = React.useState('')
   const [result, setResult] = React.useState<ProcessingResult | null>(null)
-  const submitJobUrl = props.config.submitJobUrl || DEFAULT_SUBMIT_URL
-  const publishSubmitJobUrl = props.config.publishSubmitJobUrl || DEFAULT_PUBLISH_SUBMIT_URL
+  const submitJobUrl = toSubmitJobUrl(props.config.submitJobUrl || DEFAULT_SUBMIT_URL, GP_TASK_NAMES.sondajes)
+  const publishSubmitJobUrl = toSubmitJobUrl(props.config.publishSubmitJobUrl || DEFAULT_PUBLISH_SUBMIT_URL, GP_TASK_NAMES.publicacion)
   const taskUrl = submitJobUrl.replace(/\/submitJob\/?$/i, '')
   const publishTaskUrl = publishSubmitJobUrl.replace(/\/submitJob\/?$/i, '')
   const gpServerUrl = taskUrl.replace(/\/GPServer\/.*$/i, '/GPServer')
