@@ -6,8 +6,8 @@ import { GP_TASK_NAMES, isSupportedGpUrl, toSubmitJobUrl } from '../service-url'
 import './style.scss'
 
 const DEFAULT_SONDAJES_URL = 'https://sig.aminerals.cl/server/rest/services/CargaSondajes/GPServer'
-const DEFAULT_CURVAS_URL = 'https://sig.aminerals.cl/server/rest/services/ProcesarCurvasS/GPServer/Procesar%20Master%20Plan%20%20%20Curvas%20S/submitJob'
-const DEFAULT_PUBLISH_URL = 'https://sig.aminerals.cl/vector/rest/services/PublicarResultadoValidado/GPServer/Publicar%20resultado%20validado/submitJob'
+const DEFAULT_CURVAS_URL = 'https://sig.aminerals.cl/server/rest/services/ProcesarCurvasS/GPServer'
+const DEFAULT_PUBLISH_URL = 'https://sig.aminerals.cl/server/rest/services/CargaSondajesGDB/GPServer'
 
 interface ServiceFieldProps {
   id: string

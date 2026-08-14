@@ -98,9 +98,9 @@ const COLLAR_GDB_LABELS: Record<string, string> = Object.fromEntries(
   COLLAR_FIELD_ORDER.map(name => [name, name.startsWith('r_fch_') || name.startsWith('av_fch_') ? name : name.toUpperCase()])
 )
 
-const DEFAULT_SUBMIT_URL = 'https://sig.aminerals.cl/vector/rest/services/ProcesarExcel/GPServer/Procesar%20archivo%20Excel/submitJob'
-const CURVES_SUBMIT_URL = 'https://sig.aminerals.cl/server/rest/services/ProcesarCurvasS/GPServer/Procesar%20Master%20Plan%20%20%20Curvas%20S/submitJob'
-const DEFAULT_PUBLISH_SUBMIT_URL = 'https://sig.aminerals.cl/vector/rest/services/PublicarResultadoValidado/GPServer/Publicar%20resultado%20validado/submitJob'
+const DEFAULT_SUBMIT_URL = 'https://sig.aminerals.cl/server/rest/services/CargaSondajes/GPServer'
+const CURVES_SUBMIT_URL = 'https://sig.aminerals.cl/server/rest/services/ProcesarCurvasS/GPServer'
+const DEFAULT_PUBLISH_SUBMIT_URL = 'https://sig.aminerals.cl/server/rest/services/CargaSondajesGDB/GPServer'
 const MAX_FILE_SIZE = 25 * 1024 * 1024
 const wait = async (milliseconds: number) => await new Promise(resolve => setTimeout(resolve, milliseconds))
 
