@@ -31,15 +31,15 @@ const ServiceField = ({ id, order, title, description, value, defaultValue, task
       <span className={valid ? 'is-valid' : 'is-invalid'}>{valid ? 'Configurado' : 'Revisar'}</span>
     </div>
     <label htmlFor={id}>URL del servicio o de la tarea</label>
-    <textarea id={id} value={value} rows={4} spellCheck={false} placeholder={defaultValue}
+    <textarea id={id} value={value} rows={3} spellCheck={false} placeholder={defaultValue}
       onChange={event => onChange(event.target.value)}
       onBlur={() => normalized && onChange(normalized.replace(/\/+$/, ''))} />
     {!valid && normalized && <div className="excel-uploader-setting__error">
       Ingrese una URL HTTPS de ArcGIS que contenga <strong>/GPServer</strong>.
     </div>}
-    {valid && <div className="excel-uploader-setting__resolved">
-      <strong>URL efectiva utilizada por el widget</strong><span>{effectiveUrl}</span>
-    </div>}
+    {valid && <details className="excel-uploader-setting__resolved">
+      <summary>Ver URL técnica resuelta</summary><span>{effectiveUrl}</span>
+    </details>}
     <button type="button" className="excel-uploader-setting__restore" onClick={() => onChange(defaultValue)}>Restaurar URL predeterminada</button>
   </div>
 }
