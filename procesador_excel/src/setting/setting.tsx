@@ -5,16 +5,27 @@ import { IMConfig } from '../config'
 import './style.scss'
 
 const DEFAULT_SUBMIT_URL = 'https://sig.aminerals.cl/vector/rest/services/ProcesarExcel/GPServer/Procesar%20archivo%20Excel/submitJob'
+const DEFAULT_PUBLISH_URL = 'https://sig.aminerals.cl/vector/rest/services/PublicarResultadoValidado/GPServer/Publicar%20resultado%20validado/submitJob'
 
 const Setting = (props: AllWidgetSettingProps<IMConfig>) => {
   const value = props.config.submitJobUrl || ''
   const normalized = value.trim()
   const isValid = /^https:\/\/.+\/GPServer\/.+\/submitJob\/?$/i.test(normalized)
+  const publishValue = props.config.publishSubmitJobUrl || DEFAULT_PUBLISH_URL
+  const normalizedPublish = publishValue.trim()
+  const isPublishValid = /^https:\/\/.+\/GPServer\/.+\/submitJob\/?$/i.test(normalizedPublish)
 
   const updateUrl = (submitJobUrl: string) => {
     props.onSettingChange({
       id: props.id,
       config: props.config.set('submitJobUrl', submitJobUrl)
+    })
+  }
+
+  const updatePublishUrl = (publishSubmitJobUrl: string) => {
+    props.onSettingChange({
+      id: props.id,
+      config: props.config.set('publishSubmitJobUrl', publishSubmitJobUrl)
     })
   }
 
@@ -54,6 +65,21 @@ const Setting = (props: AllWidgetSettingProps<IMConfig>) => {
         <button type="button" onClick={() => updateUrl(DEFAULT_SUBMIT_URL)}>
           Restaurar URL predeterminada
         </button>
+
+        <label htmlFor={`${props.id}-publish-gp-url`}>URL de publicación de resultados</label>
+        <textarea
+          id={`${props.id}-publish-gp-url`}
+          value={publishValue}
+          rows={6}
+          spellCheck={false}
+          placeholder={DEFAULT_PUBLISH_URL}
+          onChange={event => updatePublishUrl(event.target.value)}
+          onBlur={() => normalizedPublish && updatePublishUrl(normalizedPublish.replace(/\/$/, ''))}
+        />
+        {normalizedPublish && !isPublishValid && <div className="excel-uploader-setting__error">
+          La URL de publicación debe usar HTTPS y terminar en <strong>/submitJob</strong>.
+        </div>}
+        {isPublishValid && <div className="excel-uploader-setting__ok">URL de publicación rápida válida.</div>}
       </section>
 
       <aside>
