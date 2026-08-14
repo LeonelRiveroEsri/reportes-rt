@@ -29,6 +29,11 @@
   &__error, &__ok { margin-top: 8px; padding: 8px 9px; border-radius: 5px; font-size: 11px; }
   &__error { color: #932f2f; background: #fff0f0; }
   &__ok { color: #246c59; background: #edf9f5; }
+  &__resolved {
+    margin-top: 8px; padding: 8px 9px; overflow-wrap: anywhere; border: 1px solid #cfe8df; border-radius: 5px; color: #246c59; background: #edf9f5; font-size: 9px; line-height: 1.45;
+    strong { display: block; margin-bottom: 2px; font-size: 9px; letter-spacing: .04em; text-transform: uppercase; }
+    span { font-family: Consolas, monospace; }
+  }
   button {
     width: 100%; min-height: 36px; margin-top: 14px; border: 1px solid #9bb7c1; border-radius: 6px;
     color: #426272; background: #fff; font-size: 12px; font-weight: 600; cursor: pointer;
