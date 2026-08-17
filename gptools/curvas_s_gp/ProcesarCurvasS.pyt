@@ -146,14 +146,46 @@ def _ordered_fields(dataset):
     return [actual[field.lower()] for field in FIELDS]
 
 
+def _prepare_target_fields(target):
+    """Intenta completar el esquema y devuelve solo los campos utilizables."""
+    actual = {field.name.lower(): field.name for field in arcpy.ListFields(target)}
+    added, unavailable = [], []
+    definitions = {name.lower(): (name, kind, length) for name, kind, length in FIELD_DEFINITIONS}
+    for expected in FIELDS:
+        if expected.lower() in actual:
+            continue
+        name, kind, length = definitions[expected.lower()]
+        try:
+            kwargs = {"field_length": length} if length else {}
+            arcpy.management.AddField(target, name, kind, **kwargs)
+            added.append(name)
+            arcpy.AddMessage("Campo agregado en Curvas_S: " + name)
+        except Exception as error:
+            unavailable.append(name)
+            arcpy.AddMessage("No fue posible agregar {}. Se continuara sin ese campo: {}".format(name, error))
+    actual = {field.name.lower(): field.name for field in arcpy.ListFields(target)}
+    common = [name for name in FIELDS if name.lower() in actual]
+    return common, [actual[name.lower()] for name in common], added, unavailable
+
+
 def replace_target(source, target):
     result = {"solicitado": True, "publicado": False, "estado": "destino_no_disponible",
               "destino": target, "registros": 0}
     if not arcpy.Exists(target):
         return result
-    source_fields, target_fields = _ordered_fields(source), _ordered_fields(target)
+    common, target_fields, added, unavailable = _prepare_target_fields(target)
+    if not common:
+        result.update({"estado": "sin_campos_compatibles", "campos_no_disponibles": unavailable})
+        return result
+    source_actual = {field.name.lower(): field.name for field in arcpy.ListFields(source)}
+    source_fields = [source_actual[name.lower()] for name in common]
     backup = str(Path(arcpy.env.scratchGDB) / ("curvas_backup_" + uuid4().hex[:10]))
-    arcpy.management.CopyRows(target, backup)
+    try:
+        arcpy.management.CopyRows(target, backup)
+    except Exception as error:
+        result.update({"estado": "bloqueado", "error": str(error), "campos_agregados": added,
+                       "campos_no_disponibles": unavailable})
+        return result
     expected = int(arcpy.management.GetCount(source)[0])
     try:
         arcpy.management.TruncateTable(target)
@@ -164,16 +196,27 @@ def replace_target(source, target):
         final_count = int(arcpy.management.GetCount(target)[0])
         if final_count != expected:
             raise RuntimeError("Carga incompleta: se esperaban {} y se insertaron {}.".format(expected, final_count))
-        result.update({"publicado": True, "estado": "publicado", "registros": final_count})
+        state = "publicado_parcial" if unavailable else "publicado"
+        result.update({"publicado": True, "estado": state, "registros": final_count,
+                       "campos_cargados": common, "campos_agregados": added,
+                       "campos_no_disponibles": unavailable})
         return result
-    except Exception:
-        arcpy.management.TruncateTable(target)
-        backup_fields = _ordered_fields(backup)
-        with arcpy.da.SearchCursor(backup, backup_fields) as rows:
-            with arcpy.da.InsertCursor(target, target_fields) as writer:
-                for row in rows:
-                    writer.insertRow(row)
-        raise
+    except Exception as error:
+        try:
+            arcpy.management.TruncateTable(target)
+            backup_actual = {field.name.lower(): field.name for field in arcpy.ListFields(backup)}
+            restore_common = [name for name in common if name.lower() in backup_actual]
+            with arcpy.da.SearchCursor(backup, [backup_actual[name.lower()] for name in restore_common]) as rows:
+                with arcpy.da.InsertCursor(target, [target_fields[common.index(name)] for name in restore_common]) as writer:
+                    for row in rows:
+                        writer.insertRow(row)
+            state = "error_restaurado"
+        except Exception as restore_error:
+            state = "error_sin_restaurar"
+            error = RuntimeError("{}; restauracion: {}".format(error, restore_error))
+        result.update({"estado": state, "error": str(error), "campos_cargados": common,
+                       "campos_agregados": added, "campos_no_disponibles": unavailable})
+        return result
     finally:
         if arcpy.Exists(backup):
             arcpy.management.Delete(backup)

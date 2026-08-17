@@ -33,6 +33,11 @@ SONDAJES_FIELDS = [
     "av_fch_ini", "av_fch_term",
 ]
 CURVAS_FIELDS = ["TIPO", "FECHA", "AÑO", "MES", "PRESUPUESTO", "REAL"]
+CURVAS_FIELD_DEFINITIONS = {
+    "tipo": ("TIPO", "TEXT", 255), "fecha": ("FECHA", "DATE", None),
+    "año": ("AÑO", "SHORT", None), "mes": ("MES", "TEXT", 255),
+    "presupuesto": ("PRESUPUESTO", "DOUBLE", None), "real": ("REAL", "DOUBLE", None),
+}
 
 
 def _actual_fields(dataset):
@@ -45,6 +50,26 @@ def _ordered_fields(dataset, expected):
     if missing:
         raise ValueError("Faltan campos requeridos: " + ", ".join(missing))
     return [actual[name.lower()] for name in expected]
+
+
+def _prepare_curvas_target(target):
+    actual = _actual_fields(target)
+    added, unavailable = [], []
+    for expected in CURVAS_FIELDS:
+        if expected.lower() in actual:
+            continue
+        name, kind, length = CURVAS_FIELD_DEFINITIONS[expected.lower()]
+        try:
+            kwargs = {"field_length": length} if length else {}
+            arcpy.management.AddField(target, name, kind, **kwargs)
+            added.append(name)
+            arcpy.AddMessage("Campo agregado en Curvas_S: " + name)
+        except Exception as error:
+            unavailable.append(name)
+            arcpy.AddMessage("No fue posible agregar {}. Se continuara sin ese campo: {}".format(name, error))
+    actual = _actual_fields(target)
+    common = [name for name in CURVAS_FIELDS if name.lower() in actual]
+    return common, [actual[name.lower()] for name in common], added, unavailable
 
 
 def _validate_source(source, kind):
@@ -136,6 +161,72 @@ def _publish_atomic(source, target, kind):
             arcpy.management.Delete(backup)
 
 
+_publish_atomic_strict = _publish_atomic
+
+
+def _publish_atomic(source, target, kind):
+    """Publica Curvas S con evolucion tolerante de esquema; Sondajes sigue estricto."""
+    if kind == "Sondajes":
+        return _publish_atomic_strict(source, target, kind)
+
+    expected, source_fields, _ = _validate_source(source, kind)
+    if not arcpy.Exists(target):
+        return {"publicado": False, "estado": "destino_no_disponible", "registros": 0}
+
+    common, target_fields, added, unavailable = _prepare_curvas_target(target)
+    if not common:
+        return {"publicado": False, "estado": "sin_campos_compatibles", "registros": 0,
+                "campos_agregados": added, "campos_no_disponibles": unavailable}
+    source_actual = _actual_fields(source)
+    source_cursor_fields = [source_actual[name.lower()] for name in common]
+    backup = str(Path(arcpy.env.scratchGDB) / ("publicacion_backup_" + uuid4().hex[:10]))
+    try:
+        arcpy.management.CopyRows(target, backup)
+    except Exception as error:
+        return {"publicado": False, "estado": "bloqueado", "registros": 0, "error": str(error),
+                "campos_agregados": added, "campos_no_disponibles": unavailable}
+
+    try:
+        arcpy.management.TruncateTable(target)
+        inserted = 0
+        with arcpy.da.SearchCursor(source, source_cursor_fields) as rows:
+            with arcpy.da.InsertCursor(target, target_fields) as writer:
+                for row in rows:
+                    writer.insertRow(row)
+                    inserted += 1
+        final_count = int(arcpy.management.GetCount(target)[0])
+        if inserted != expected or final_count != expected:
+            raise RuntimeError("Carga incompleta: origen={}, insertados={}, destino={}.".format(
+                expected, inserted, final_count))
+        return {"publicado": True, "estado": "publicado_parcial" if unavailable else "publicado",
+                "registros": final_count, "campos_cargados": common, "campos_agregados": added,
+                "campos_no_disponibles": unavailable}
+    except Exception as error:
+        state = "error_restaurado"
+        try:
+            arcpy.management.TruncateTable(target)
+            backup_actual = _actual_fields(backup)
+            restore_common = [name for name in common if name.lower() in backup_actual]
+            restore_source = [backup_actual[name.lower()] for name in restore_common]
+            restore_target = [target_fields[common.index(name)] for name in restore_common]
+            with arcpy.da.SearchCursor(backup, restore_source) as rows:
+                with arcpy.da.InsertCursor(target, restore_target) as writer:
+                    for row in rows:
+                        writer.insertRow(row)
+        except Exception as restore_error:
+            state = "error_sin_restaurar"
+            error = RuntimeError("{}; restauracion: {}".format(error, restore_error))
+        return {"publicado": False, "estado": state, "registros": 0, "error": str(error),
+                "campos_cargados": common, "campos_agregados": added,
+                "campos_no_disponibles": unavailable}
+    finally:
+        if arcpy.Exists(backup):
+            try:
+                arcpy.management.Delete(backup)
+            except Exception:
+                pass
+
+
 class Toolbox:
     def __init__(self):
         self.label = "Publicación de resultados validados"
@@ -224,9 +315,13 @@ class PublicarResultadoValidado:
             "segundos": round(time.perf_counter() - started, 3),
         })
         if publication["publicado"]:
-            status = f"{inferred_kind} publicado correctamente: {publication['registros']} registros."
+            suffix = ""
+            if publication.get("campos_no_disponibles"):
+                suffix = " Campos omitidos: " + ", ".join(publication["campos_no_disponibles"]) + "."
+            status = f"{inferred_kind} publicado correctamente: {publication['registros']} registros.{suffix}"
         else:
-            status = f"No se encontró el destino de {inferred_kind}; no se modificaron datos."
+            status = "No fue posible modificar {} (estado: {}). El proceso finalizo sin interrumpir la salida.".format(
+                inferred_kind, publication.get("estado", "no_publicado"))
         arcpy.AddMessage(status)
         parameters[3].value = publication["registros"]
         parameters[4].value = status
