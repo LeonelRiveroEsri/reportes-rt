@@ -56,6 +56,19 @@ interface CurvesFeatureSet {
   features?: Array<{ attributes?: Record<string, unknown> }>
 }
 
+const sessionIdentity = (...serviceUrls: string[]) => {
+  const manager = SessionManager.getInstance()
+  const session = serviceUrls.map(url => manager.getSessionByUrl(url)).find(Boolean) || manager.getMainSession()
+  const current = session as any
+  const user = current?.user || current?.portalUser || {}
+  return {
+    usuario_sesion: String(user.username || current?.username || ''),
+    nombre_sesion: String(user.fullName || user.name || ''),
+    correo_sesion: String(user.email || ''),
+    origen_ejecucion: 'Experience Builder'
+  }
+}
+
 const ARCGIS_FIELD_TYPES: Record<string, string> = {
   esriFieldTypeOID: 'oid',
   esriFieldTypeString: 'string',
@@ -377,7 +390,12 @@ const CurvesTab = ({ fallbackToken, curvesSubmitJobUrl: configuredCurvesUrl = CU
       if (!itemId) throw new Error('El servidor no devolvió el itemID del archivo.')
       setStage('submitting'); setStatus('Iniciando cálculo de curvas acumuladas…')
       const submitted = await request<JobResponse>(curvesSubmitJobUrl, token => {
-        const params = new URLSearchParams({ f: 'json', archivo_excel: JSON.stringify({ itemID: itemId }), publicar_en_curvas_s: publish ? 'true' : 'false' })
+        const params = new URLSearchParams({
+          f: 'json',
+          archivo_excel: JSON.stringify({ itemID: itemId }),
+          publicar_en_curvas_s: publish ? 'true' : 'false',
+          ...sessionIdentity(curvesSubmitJobUrl, publishSubmitJobUrl)
+        })
         if (token) params.set('token', token); return params
       })
       if (!submitted.jobId) throw new Error('El geoproceso no devolvió un jobId.')
@@ -818,7 +836,8 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
           archivo_coordenadas: JSON.stringify({ itemID: coordinateItemId }),
           publicar_en_gdb: publishToGdb ? 'true' : 'false',
           returnZ: 'false',
-          returnM: 'false'
+          returnM: 'false',
+          ...sessionIdentity(submitJobUrl, publishSubmitJobUrl)
         })
         if (token) params.set('token', token)
         return params
