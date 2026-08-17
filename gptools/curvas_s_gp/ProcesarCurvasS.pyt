@@ -17,6 +17,7 @@ except ImportError:
 
 import arcpy
 import pandas as pd
+from hosted_status import update_status
 
 
 TOOLBOX_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
@@ -265,7 +266,12 @@ class ProcesarCurvasS:
             displayName="Resumen JSON", name="resumen_json",
             datatype="GPString", parameterType="Derived", direction="Output"
         )
-        return [input_excel, publish, output_table, count, message, result_json]
+        session_user = arcpy.Parameter(displayName="Usuario de la sesion", name="usuario_sesion", datatype="GPString", parameterType="Optional", direction="Input")
+        session_name = arcpy.Parameter(displayName="Nombre del usuario", name="nombre_sesion", datatype="GPString", parameterType="Optional", direction="Input")
+        session_email = arcpy.Parameter(displayName="Correo del usuario", name="correo_sesion", datatype="GPString", parameterType="Optional", direction="Input")
+        execution_origin = arcpy.Parameter(displayName="Origen de la ejecucion", name="origen_ejecucion", datatype="GPString", parameterType="Optional", direction="Input")
+        execution_origin.value = "GP Tool / REST"
+        return [input_excel, publish, output_table, count, message, result_json, session_user, session_name, session_email, execution_origin]
 
     def isLicensed(self):
         return True
@@ -281,6 +287,10 @@ class ProcesarCurvasS:
     def execute(self, parameters, messages):
         input_path = parameters[0].valueAsText
         publish_requested = str(parameters[1].valueAsText or "false").lower() == "true"
+        session_user = parameters[6].valueAsText or ""
+        session_name = parameters[7].valueAsText or ""
+        session_email = parameters[8].valueAsText or ""
+        execution_origin = parameters[9].valueAsText or "GP Tool / REST"
         arcpy.SetProgressor("step", "Preparando Curvas_S...", 0, 4, 1)
         try:
             arcpy.AddMessage("Leyendo categorias y periodos de la hoja AVANCE PROGRAMA...")
@@ -310,6 +320,12 @@ class ProcesarCurvasS:
                 "metricas": metrics, "publicacion_gdb": publication,
             }
             status = f"AVANCE PROGRAMA procesado correctamente. Se generaron {len(data)} registros."
+            status_update = update_status(
+                "CURVAS_S", "Curvas S", os.path.basename(input_path), len(data),
+                session_user, session_name, session_email, execution_origin, status,
+            )
+            result["estado_actualizacion"] = status_update
+            arcpy.AddMessage("Tabla de control actualizada." if status_update.get("actualizado") else f"Tabla de control no actualizada: {status_update.get('error')}")
             table_view = arcpy.management.MakeTableView(output, "Curvas S procesadas")
             parameters[2].value = table_view.getOutput(0)
             parameters[3].value = len(data)

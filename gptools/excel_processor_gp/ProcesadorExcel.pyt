@@ -41,6 +41,7 @@ from excel_feature_builder import (
     replace_target_with_rows,
 )
 from source_reader import read_source_inputs
+from hosted_status import update_status
 
 
 TARGET_FEATURE_CLASS = (
@@ -126,7 +127,13 @@ class ProcesarExcel:
             direction="Output",
         )
 
-        return [input_excel, input_coordinates, publish_to_gdb, output_features, record_count, status_message, result_json]
+        session_user = arcpy.Parameter(displayName="Usuario de la sesion", name="usuario_sesion", datatype="GPString", parameterType="Optional", direction="Input")
+        session_name = arcpy.Parameter(displayName="Nombre del usuario", name="nombre_sesion", datatype="GPString", parameterType="Optional", direction="Input")
+        session_email = arcpy.Parameter(displayName="Correo del usuario", name="correo_sesion", datatype="GPString", parameterType="Optional", direction="Input")
+        execution_origin = arcpy.Parameter(displayName="Origen de la ejecucion", name="origen_ejecucion", datatype="GPString", parameterType="Optional", direction="Input")
+        execution_origin.value = "GP Tool / REST"
+
+        return [input_excel, input_coordinates, publish_to_gdb, output_features, record_count, status_message, result_json, session_user, session_name, session_email, execution_origin]
 
     def isLicensed(self):
         return True
@@ -148,6 +155,10 @@ class ProcesarExcel:
         input_path = parameters[0].valueAsText
         coordinate_path = parameters[1].valueAsText
         publish_requested = str(parameters[2].valueAsText or "false").lower() == "true"
+        session_user = parameters[7].valueAsText or ""
+        session_name = parameters[8].valueAsText or ""
+        session_email = parameters[9].valueAsText or ""
+        execution_origin = parameters[10].valueAsText or "GP Tool / REST"
         arcpy.SetProgressor("step", "Preparando procesamiento...", 0, 4, 1)
 
         try:
@@ -255,6 +266,12 @@ class ProcesarExcel:
                 "publicacion_gdb": publication,
                 "rendimiento": performance,
             }
+            status_update = update_status(
+                "SONDAJES", "Sondajes", os.path.basename(input_path), len(data),
+                session_user, session_name, session_email, execution_origin, result_message,
+            )
+            result["estado_actualizacion"] = status_update
+            arcpy.AddMessage("Tabla de control actualizada." if status_update.get("actualizado") else f"Tabla de control no actualizada: {status_update.get('error')}")
             result_json = json.dumps(result, ensure_ascii=False, separators=(",", ":"))
 
             arcpy.AddMessage(f"Archivo: {os.path.basename(input_path)}")
