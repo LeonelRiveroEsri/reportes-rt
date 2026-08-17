@@ -228,7 +228,7 @@ const validateCurvesWorkbook = async (candidate: File): Promise<string> => {
   }
   const sheet = workbook.Sheets['AVANCE PROGRAMA']
   if (!sheet) throw new Error('El libro no contiene la hoja obligatoria AVANCE PROGRAMA.')
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null, raw: false })
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null, raw: true })
   const headerRow = rows.findIndex((row, index) => normalizeCell(row?.[0]).toUpperCase() === 'PROGRAMA' && (rows[index + 1] || []).map(normalizeCell).some(value => value.toUpperCase() === 'ACUMULADO PLAN'))
   if (headerRow < 0) throw new Error('No se reconocieron los encabezados de AVANCE PROGRAMA.')
   const categories: string[] = []
@@ -238,7 +238,13 @@ const validateCurvesWorkbook = async (candidate: File): Promise<string> => {
     if (text) current = text
     if (current && current.toUpperCase() !== 'PROGRAMA' && !categories.includes(current)) categories.push(current)
   }
-  const periods = rows.slice(headerRow + 2).filter(row => /^\d{1,2}[-/]\d{1,2}[-/]\d{2,4}$|^\d{4}[-/]\d{1,2}[-/]\d{1,2}$/.test(normalizeCell(row?.[0]))).length
+  const isPeriod = (value: unknown): boolean => {
+    if (value instanceof Date) return !Number.isNaN(value.getTime())
+    if (typeof value === 'number') return value > 20000 && value < 100000
+    const text = normalizeCell(value)
+    return /^\d{1,2}[-/]\d{1,2}[-/]\d{2,4}$|^\d{4}[-/]\d{1,2}[-/]\d{1,2}$|^[A-Za-zÁÉÍÓÚáéíóú]{3,10}[-/]\d{2,4}$/.test(text)
+  }
+  const periods = rows.slice(headerRow + 2).filter(row => isPeriod(row?.[0])).length
   if (!categories.length || !periods) throw new Error('AVANCE PROGRAMA no contiene categorías o fechas mensuales válidas.')
   return `AVANCE PROGRAMA: ${categories.length} categorías · ${periods} periodos · ${categories.length * periods} registros`
 }
@@ -342,7 +348,7 @@ const CurvesTab = ({ fallbackToken, curvesSubmitJobUrl: configuredCurvesUrl = CU
     if (!candidate) return
     if (!candidate.name.toLowerCase().endsWith('.xlsx')) { setFile(null); setError('Seleccione un archivo con extensión .xlsx.'); return }
     if (candidate.size > MAX_FILE_SIZE) { setFile(null); setError('El archivo supera el máximo permitido de 25 MB.'); return }
-    setStage('validating'); setStatus('Validando hoja MLP_ y bloques del Master Plan…')
+    setStage('validating'); setStatus('Validando AVANCE PROGRAMA, categorías y periodos…')
     try {
       const summary = await validateCurvesWorkbook(candidate)
       setFile(candidate); setValidation(summary); setStage('idle'); setStatus('Archivo validado y preparado para procesar.')
