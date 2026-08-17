@@ -442,7 +442,9 @@ const CurvesTab = ({ fallbackToken, curvesSubmitJobUrl: configuredCurvesUrl = CU
   const curveTypes = Array.from(new Set(curveRows.map(feature => String(curveAttribute(feature.attributes || {}, 'TIPO'))))).filter(Boolean)
   const curveYears = Array.from(new Set(curveRows.map(feature => Number(curveAttribute(feature.attributes || {}, 'AÑO'))).filter(Number.isFinite))).sort((a, b) => b - a)
   const activeCurveType = selectedCurveType || curveTypes[0] || ''
-  const activeCurveYear = selectedCurveYear || String(curveYears[0] || '')
+  const currentYear = new Date().getFullYear()
+  const defaultCurveYear = curveYears.includes(currentYear) ? currentYear : curveYears[0]
+  const activeCurveYear = selectedCurveYear || String(defaultCurveYear || '')
   const chartRows = curveRows
     .filter(feature => String(curveAttribute(feature.attributes || {}, 'TIPO')) === activeCurveType && String(curveAttribute(feature.attributes || {}, 'AÑO')) === activeCurveYear)
     .sort((a, b) => Number(curveAttribute(a.attributes || {}, 'FECHA')) - Number(curveAttribute(b.attributes || {}, 'FECHA')))
