@@ -6,6 +6,8 @@ import os
 import time
 from pathlib import Path
 from uuid import uuid4
+from urllib.parse import quote, urlencode
+from urllib.request import Request, urlopen
 
 import arcpy
 
@@ -19,6 +21,59 @@ CURVAS_TARGET = (
     r"\CL_VPD_GER_Plano_Sondajes_MLP.gdb\Curvas_S"
 )
 TARGET_WKID = 32719
+STATUS_ITEM_ID = "a143e48aae57415eb73c0dbb80bf3e4e"
+STATUS_PORTAL = "https://sig.aminerals.cl/portal"
+STATUS_REFERER = "https://sig.aminerals.cl"
+STATUS_ADMIN_USER = "__AMSA_ADMIN_USER__"
+STATUS_ADMIN_PASSWORD = "__AMSA_ADMIN_PASSWORD__"
+
+
+def _status_post(url, values):
+    request = Request(url, data=urlencode(values).encode("utf-8"), headers={"Referer": STATUS_REFERER})
+    with urlopen(request, timeout=30) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if payload.get("error"):
+        raise RuntimeError(payload["error"].get("message", "Error REST de ArcGIS"))
+    return payload
+
+
+def _update_status(kind, filename, records, session_user, full_name, email, origin):
+    try:
+        token = _status_post(f"{STATUS_PORTAL}/sharing/rest/generateToken", {
+            "f": "json", "username": STATUS_ADMIN_USER, "password": STATUS_ADMIN_PASSWORD,
+            "client": "referer", "referer": STATUS_REFERER, "expiration": "60",
+        })["token"]
+        item = _status_post(f"{STATUS_PORTAL}/sharing/rest/content/items/{STATUS_ITEM_ID}", {"f": "json", "token": token})
+        table_url = str(item["url"]).rstrip("/") + "/0"
+        if session_user and (not full_name or not email):
+            profile = _status_post(f"{STATUS_PORTAL}/sharing/rest/community/users/{quote(session_user)}", {"f": "json", "token": token})
+            full_name = full_name or profile.get("fullName", "")
+            email = email or profile.get("email", "")
+        key = "SONDAJES" if kind == "Sondajes" else "CURVAS_S"
+        query = _status_post(f"{table_url}/query", {
+            "f": "json", "token": token, "where": f"CLAVE='{key}'",
+            "outFields": "OBJECTID", "returnGeometry": "false",
+        })
+        attributes = {
+            "CLAVE": key, "PROCESO": kind, "FRECUENCIA": "Bajo demanda",
+            "ULTIMA_ACTUALIZACION": int(time.time() * 1000), "USUARIO": session_user or "sin_sesion",
+            "NOMBRE_COMPLETO": full_name or session_user or "Sin datos", "CORREO": email or "Sin datos",
+            "ARCHIVO": filename or "Resultado validado", "REGISTROS": int(records or 0),
+            "ESTADO": "Completado", "ORIGEN": origin or "GP Tool / REST",
+            "MENSAJE": f"{kind} publicado correctamente.",
+        }
+        features, operation = query.get("features") or [], "adds"
+        if features:
+            attributes["OBJECTID"], operation = features[0]["attributes"]["OBJECTID"], "updates"
+        result = _status_post(f"{table_url}/applyEdits", {
+            "f": "json", "token": token, operation: json.dumps([{"attributes": attributes}], ensure_ascii=False),
+        })
+        edit = (result.get("updateResults") or result.get("addResults") or [{}])[0]
+        if not edit.get("success"):
+            raise RuntimeError(str(edit.get("error") or "applyEdits no confirmado"))
+        return {"actualizado": True, "operacion": operation, "objectid": edit.get("objectId")}
+    except Exception as error:
+        return {"actualizado": False, "error": f"{type(error).__name__}: {error}"}
 
 SONDAJES_FIELDS = [
     "r_nomb_recom", "r_tiposondaje", "r_nro_son", "r_sector",
@@ -270,7 +325,13 @@ class PublicarResultadoValidado:
             displayName="Resumen JSON", name="resumen_json",
             datatype="GPString", parameterType="Derived", direction="Output"
         )
-        return [kind, sondajes, curvas, count, message, result_json]
+        session_user = arcpy.Parameter(displayName="Usuario de la sesion", name="usuario_sesion", datatype="GPString", parameterType="Optional", direction="Input")
+        session_name = arcpy.Parameter(displayName="Nombre del usuario", name="nombre_sesion", datatype="GPString", parameterType="Optional", direction="Input")
+        session_email = arcpy.Parameter(displayName="Correo del usuario", name="correo_sesion", datatype="GPString", parameterType="Optional", direction="Input")
+        execution_origin = arcpy.Parameter(displayName="Origen de la ejecucion", name="origen_ejecucion", datatype="GPString", parameterType="Optional", direction="Input")
+        execution_origin.value = "GP Tool / REST"
+        source_file = arcpy.Parameter(displayName="Archivo de origen", name="archivo_origen", datatype="GPString", parameterType="Optional", direction="Input")
+        return [kind, sondajes, curvas, count, message, result_json, session_user, session_name, session_email, execution_origin, source_file]
 
     def isLicensed(self):
         return True
@@ -290,6 +351,11 @@ class PublicarResultadoValidado:
         requested_kind = parameters[0].valueAsText
         sondajes = parameters[1].valueAsText
         curvas = parameters[2].valueAsText
+        session_user = parameters[6].valueAsText or ""
+        session_name = parameters[7].valueAsText or ""
+        session_email = parameters[8].valueAsText or ""
+        execution_origin = parameters[9].valueAsText or "GP Tool / REST"
+        source_file = parameters[10].valueAsText or ""
 
         if not sondajes and not curvas:
             status = "Ejecución de publicación completada sin datos. No se modificó ningún destino."
@@ -319,6 +385,12 @@ class PublicarResultadoValidado:
             if publication.get("campos_no_disponibles"):
                 suffix = " Campos omitidos: " + ", ".join(publication["campos_no_disponibles"]) + "."
             status = f"{inferred_kind} publicado correctamente: {publication['registros']} registros.{suffix}"
+            status_update = _update_status(
+                inferred_kind, source_file, publication["registros"], session_user,
+                session_name, session_email, execution_origin,
+            )
+            publication["estado_actualizacion"] = status_update
+            arcpy.AddMessage("Tabla de control actualizada." if status_update.get("actualizado") else f"Tabla de control no actualizada: {status_update.get('error')}")
         else:
             status = "No fue posible modificar {} (estado: {}). El proceso finalizo sin interrumpir la salida.".format(
                 inferred_kind, publication.get("estado", "no_publicado"))

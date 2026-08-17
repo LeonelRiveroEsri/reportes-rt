@@ -5,6 +5,8 @@ import json
 import os
 import sys
 import time
+from urllib.parse import quote, urlencode
+from urllib.request import Request, urlopen
 
 # fastexcel convierte mediante Arrow. Cargar estas DLL antes de ArcPy evita
 # conflictos de resolución de DLL observados en el ambiente de ArcGIS Pro.
@@ -41,13 +43,67 @@ from excel_feature_builder import (
     replace_target_with_rows,
 )
 from source_reader import read_source_inputs
-from hosted_status import update_status
 
 
 TARGET_FEATURE_CLASS = (
     r"\\amssclgis09.ams.gmams.cl\CL_VPD_DEMO\CL_MLP_GEO\02_FGDB"
     r"\CL_VPD_GER_Plano_Sondajes_MLP.gdb\Collar_Recomendado"
 )
+
+STATUS_ITEM_ID = "a143e48aae57415eb73c0dbb80bf3e4e"
+STATUS_PORTAL = "https://sig.aminerals.cl/portal"
+STATUS_REFERER = "https://sig.aminerals.cl"
+STATUS_ADMIN_USER = "__AMSA_ADMIN_USER__"
+STATUS_ADMIN_PASSWORD = "__AMSA_ADMIN_PASSWORD__"
+
+
+def _status_post(url, values):
+    request = Request(
+        url, data=urlencode(values).encode("utf-8"),
+        headers={"Referer": STATUS_REFERER},
+    )
+    with urlopen(request, timeout=30) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if payload.get("error"):
+        raise RuntimeError(payload["error"].get("message", "Error REST de ArcGIS"))
+    return payload
+
+
+def update_status(key, process, filename, records, session_user="", full_name="", email="", origin="GP Tool / REST", message=""):
+    try:
+        token = _status_post(f"{STATUS_PORTAL}/sharing/rest/generateToken", {
+            "f": "json", "username": STATUS_ADMIN_USER, "password": STATUS_ADMIN_PASSWORD,
+            "client": "referer", "referer": STATUS_REFERER, "expiration": "60",
+        })["token"]
+        item = _status_post(f"{STATUS_PORTAL}/sharing/rest/content/items/{STATUS_ITEM_ID}", {"f": "json", "token": token})
+        table_url = str(item["url"]).rstrip("/") + "/0"
+        if session_user and (not full_name or not email):
+            profile = _status_post(f"{STATUS_PORTAL}/sharing/rest/community/users/{quote(session_user)}", {"f": "json", "token": token})
+            full_name = full_name or profile.get("fullName", "")
+            email = email or profile.get("email", "")
+        query = _status_post(f"{table_url}/query", {
+            "f": "json", "token": token, "where": "CLAVE='{}'".format(key.replace("'", "''")),
+            "outFields": "OBJECTID", "returnGeometry": "false",
+        })
+        attributes = {
+            "CLAVE": key, "PROCESO": process, "FRECUENCIA": "Bajo demanda",
+            "ULTIMA_ACTUALIZACION": int(time.time() * 1000), "USUARIO": session_user or "sin_sesion",
+            "NOMBRE_COMPLETO": full_name or session_user or "Sin datos", "CORREO": email or "Sin datos",
+            "ARCHIVO": filename, "REGISTROS": int(records or 0), "ESTADO": "Completado",
+            "ORIGEN": origin or "GP Tool / REST", "MENSAJE": message,
+        }
+        features, operation = query.get("features") or [], "adds"
+        if features:
+            attributes["OBJECTID"], operation = features[0]["attributes"]["OBJECTID"], "updates"
+        result = _status_post(f"{table_url}/applyEdits", {
+            "f": "json", "token": token, operation: json.dumps([{"attributes": attributes}], ensure_ascii=False),
+        })
+        edit = (result.get("updateResults") or result.get("addResults") or [{}])[0]
+        if not edit.get("success"):
+            raise RuntimeError(str(edit.get("error") or "applyEdits no confirmado"))
+        return {"actualizado": True, "operacion": operation, "objectid": edit.get("objectId")}
+    except Exception as error:
+        return {"actualizado": False, "error": f"{type(error).__name__}: {error}"}
 
 
 class Toolbox:
@@ -266,12 +322,17 @@ class ProcesarExcel:
                 "publicacion_gdb": publication,
                 "rendimiento": performance,
             }
-            status_update = update_status(
-                "SONDAJES", "Sondajes", os.path.basename(input_path), len(data),
-                session_user, session_name, session_email, execution_origin, result_message,
-            )
+            status_update = {"actualizado": False, "estado": "no_publicado"}
+            if publication.get("publicado"):
+                status_update = update_status(
+                    "SONDAJES", "Sondajes", os.path.basename(input_path), len(data),
+                    session_user, session_name, session_email, execution_origin, result_message,
+                )
             result["estado_actualizacion"] = status_update
-            arcpy.AddMessage("Tabla de control actualizada." if status_update.get("actualizado") else f"Tabla de control no actualizada: {status_update.get('error')}")
+            if publication.get("publicado"):
+                arcpy.AddMessage("Tabla de control actualizada." if status_update.get("actualizado") else f"Tabla de control no actualizada: {status_update.get('error')}")
+            else:
+                arcpy.AddMessage("Ejecucion de validacion: no se modifica la tabla de control.")
             result_json = json.dumps(result, ensure_ascii=False, separators=(",", ":"))
 
             arcpy.AddMessage(f"Archivo: {os.path.basename(input_path)}")

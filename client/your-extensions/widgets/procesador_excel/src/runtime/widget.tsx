@@ -331,7 +331,9 @@ const CurvesTab = ({ fallbackToken, curvesSubmitJobUrl: configuredCurvesUrl = CU
         const params = new URLSearchParams({
           f: 'json',
           tipo_resultado: 'Curvas S',
-          curvas_s_procesadas: JSON.stringify(result.table)
+          curvas_s_procesadas: JSON.stringify(result.table),
+          archivo_origen: file?.name || '',
+          ...sessionIdentity(curvesSubmitJobUrl, publishSubmitJobUrl)
         })
         if (token) params.set('token', token)
         return params
@@ -746,7 +748,9 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
         const params = new URLSearchParams({
           f: 'json',
           tipo_resultado: 'Sondajes',
-          sondajes_procesados: JSON.stringify(result.featureSet)
+          sondajes_procesados: JSON.stringify(result.featureSet),
+          archivo_origen: file?.name || '',
+          ...sessionIdentity(submitJobUrl, publishSubmitJobUrl)
         })
         if (token) params.set('token', token)
         return params
