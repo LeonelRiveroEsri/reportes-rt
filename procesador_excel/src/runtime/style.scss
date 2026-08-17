@@ -65,6 +65,7 @@
   &__chart { margin-top: 18px; padding: 15px; border: 1px solid #cbdce2; border-radius: 10px; background: #fff; }
   &__chart-head { display: flex; align-items: center; justify-content: space-between; gap: 14px;
     > div { display: flex; flex-direction: column; }
+    > div:last-child { min-width: 180px; gap: 6px; }
     strong { color: var(--amsa-dark); font-size: 13px; }
     small { color: #7e929e; font-size: 9px; }
     select { max-width: 230px; min-height: 34px; padding: 0 28px 0 9px; border: 1px solid #bfcfd6; border-radius: 6px; color: #365466; background: #fff; font-size: 10px; }

@@ -226,23 +226,21 @@ const validateCurvesWorkbook = async (candidate: File): Promise<string> => {
   } catch (_) {
     throw new Error('El archivo no pudo abrirse como un libro XLSX válido.')
   }
-  const sheet = workbook.Sheets.MLP_
-  if (!sheet) throw new Error('El libro no contiene la hoja obligatoria MLP_.')
+  const sheet = workbook.Sheets['AVANCE PROGRAMA']
+  if (!sheet) throw new Error('El libro no contiene la hoja obligatoria AVANCE PROGRAMA.')
   const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null, raw: false })
-  const types: string[] = []
-  for (let row = 0; row < rows.length - 2; row++) {
-    for (let column = 0; column < (rows[row]?.length || 0); column++) {
-      const title = normalizeCell(rows[row]?.[column])
-      if (!title.startsWith('Detalle Mensual')) continue
-      if (normalizeCell(rows[row + 1]?.[column]) !== 'Presupuesto' || normalizeCell(rows[row + 2]?.[column]) !== 'Real') continue
-      const type = title.split(/\r?\n/, 2)[1]?.trim()
-      if (type) types.push(type)
-    }
+  const headerRow = rows.findIndex((row, index) => normalizeCell(row?.[0]).toUpperCase() === 'PROGRAMA' && (rows[index + 1] || []).map(normalizeCell).some(value => value.toUpperCase() === 'ACUMULADO PLAN'))
+  if (headerRow < 0) throw new Error('No se reconocieron los encabezados de AVANCE PROGRAMA.')
+  const categories: string[] = []
+  let current = ''
+  for (const value of rows[headerRow] || []) {
+    const text = normalizeCell(value)
+    if (text) current = text
+    if (current && current.toUpperCase() !== 'PROGRAMA' && !categories.includes(current)) categories.push(current)
   }
-  const expected = ['Geológicos', 'Geometalúrgicos', 'EVU + Tigresas', 'Geotecnia & Estructural', 'Hidrogeológico']
-  const missing = expected.filter(type => !types.includes(type))
-  if (missing.length) throw new Error(`La hoja MLP_ no contiene los bloques requeridos: ${missing.join(', ')}.`)
-  return `MLP_: ${expected.length} tipos · 12 meses · 60 registros acumulados`
+  const periods = rows.slice(headerRow + 2).filter(row => /^\d{1,2}[-/]\d{1,2}[-/]\d{2,4}$|^\d{4}[-/]\d{1,2}[-/]\d{1,2}$/.test(normalizeCell(row?.[0]))).length
+  if (!categories.length || !periods) throw new Error('AVANCE PROGRAMA no contiene categorías o fechas mensuales válidas.')
+  return `AVANCE PROGRAMA: ${categories.length} categorías · ${periods} periodos · ${categories.length * periods} registros`
 }
 
 interface CurvesTabProps {
@@ -263,6 +261,7 @@ const CurvesTab = ({ fallbackToken, curvesSubmitJobUrl: configuredCurvesUrl = CU
   const [error, setError] = React.useState('')
   const [result, setResult] = React.useState<{ count?: number, message?: string, summary?: Record<string, unknown>, table?: CurvesFeatureSet, published?: boolean } | null>(null)
   const [selectedCurveType, setSelectedCurveType] = React.useState('')
+  const [selectedCurveYear, setSelectedCurveYear] = React.useState('')
   const taskUrl = curvesSubmitJobUrl.replace(/\/submitJob\/?$/i, '')
   const gpServerUrl = taskUrl.replace(/\/GPServer\/.*$/i, '/GPServer')
   const publishTaskUrl = publishSubmitJobUrl.replace(/\/submitJob\/?$/i, '')
@@ -401,8 +400,8 @@ const CurvesTab = ({ fallbackToken, curvesSubmitJobUrl: configuredCurvesUrl = CU
     }
   }
 
-  const reset = () => { setFile(null); setPublish(false); setStage('idle'); setStatus('Seleccione el Master Plan para comenzar.'); setValidation(''); setError(''); setResult(null); setSelectedCurveType(''); if (inputRef.current) inputRef.current.value = '' }
-  const curveFields = ['TIPO', 'MES', 'PRESUPUESTO', 'REAL', 'AÑO']
+  const reset = () => { setFile(null); setPublish(false); setStage('idle'); setStatus('Seleccione el libro maestro para comenzar.'); setValidation(''); setError(''); setResult(null); setSelectedCurveType(''); setSelectedCurveYear(''); if (inputRef.current) inputRef.current.value = '' }
+  const curveFields = ['TIPO', 'FECHA', 'AÑO', 'MES', 'PRESUPUESTO', 'REAL']
   const curveRows = result?.table?.features || []
   const curveAttribute = (attributes: Record<string, unknown>, name: string): unknown => {
     const actual = Object.keys(attributes || {}).find(key => key.toUpperCase() === name.toUpperCase())
@@ -413,6 +412,10 @@ const CurvesTab = ({ fallbackToken, curvesSubmitJobUrl: configuredCurvesUrl = CU
     if (name === 'PRESUPUESTO' || name === 'REAL') {
       const number = Number(value)
       return Number.isFinite(number) ? number.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : String(value)
+    }
+    if (name === 'FECHA') {
+      const date = new Date(typeof value === 'number' ? value : String(value))
+      return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString('es-CL', { timeZone: 'UTC' })
     }
     return String(value)
   }
@@ -431,14 +434,16 @@ const CurvesTab = ({ fallbackToken, curvesSubmitJobUrl: configuredCurvesUrl = CU
   }
   const monthOrder = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
   const curveTypes = Array.from(new Set(curveRows.map(feature => String(curveAttribute(feature.attributes || {}, 'TIPO'))))).filter(Boolean)
+  const curveYears = Array.from(new Set(curveRows.map(feature => Number(curveAttribute(feature.attributes || {}, 'AÑO'))).filter(Number.isFinite))).sort((a, b) => b - a)
   const activeCurveType = selectedCurveType || curveTypes[0] || ''
+  const activeCurveYear = selectedCurveYear || String(curveYears[0] || '')
   const chartRows = curveRows
-    .filter(feature => String(curveAttribute(feature.attributes || {}, 'TIPO')) === activeCurveType)
-    .sort((a, b) => monthOrder.indexOf(String(curveAttribute(a.attributes || {}, 'MES')).trim()) - monthOrder.indexOf(String(curveAttribute(b.attributes || {}, 'MES')).trim()))
+    .filter(feature => String(curveAttribute(feature.attributes || {}, 'TIPO')) === activeCurveType && String(curveAttribute(feature.attributes || {}, 'AÑO')) === activeCurveYear)
+    .sort((a, b) => Number(curveAttribute(a.attributes || {}, 'FECHA')) - Number(curveAttribute(b.attributes || {}, 'FECHA')))
   const chartValues = chartRows.flatMap(feature => [Number(curveAttribute(feature.attributes || {}, 'PRESUPUESTO')), Number(curveAttribute(feature.attributes || {}, 'REAL'))]).filter(Number.isFinite)
   const chartMax = Math.max(...chartValues, 1)
   const chartWidth = 620; const chartHeight = 230; const chartPadding = { left: 54, right: 18, top: 18, bottom: 35 }
-  const chartX = (index: number) => chartPadding.left + index * ((chartWidth - chartPadding.left - chartPadding.right) / 11)
+  const chartX = (index: number) => chartPadding.left + index * ((chartWidth - chartPadding.left - chartPadding.right) / Math.max(chartRows.length - 1, 1))
   const chartY = (value: number) => chartPadding.top + (chartHeight - chartPadding.top - chartPadding.bottom) * (1 - value / chartMax)
   const chartPath = (field: string) => chartRows.map((feature, index) => `${index === 0 ? 'M' : 'L'} ${chartX(index)} ${chartY(Number(curveAttribute(feature.attributes || {}, field)) || 0)}`).join(' ')
   const lastChartRow = chartRows[chartRows.length - 1]?.attributes || {}
@@ -448,18 +453,18 @@ const CurvesTab = ({ fallbackToken, curvesSubmitJobUrl: configuredCurvesUrl = CU
   const size = file ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : ''
   return <main className="excel-uploader__content excel-uploader__curves">
     <div className="excel-uploader__steps"><span className={file ? 'is-active' : ''}><i>1</i>Archivo</span><span className={validation ? 'is-active' : ''}><i>2</i>Validación</span><span className={busy || stage === 'success' ? 'is-active' : ''}><i>3</i>Procesamiento</span></div>
-    <div className="excel-uploader__section-head"><h3>1. Master Plan MLP</h3><small>Hoja MLP_</small></div>
+    <div className="excel-uploader__section-head"><h3>1. Libro maestro de sondajes</h3><small>Hoja AVANCE PROGRAMA</small></div>
     <div className={`excel-uploader__dropzone excel-uploader__dropzone--curves${file ? ' has-file' : ''}`} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); if (!busy) selectFile(event.dataTransfer.files?.[0]) }} onClick={() => !busy && inputRef.current?.click()} role="button" tabIndex={0}>
       <input ref={inputRef} type="file" accept=".xlsx" onChange={event => selectFile(event.target.files?.[0])} disabled={busy} />
-      <b className="excel-uploader__file-role">Master Plan</b><div className="excel-uploader__file-icon">X</div>
-      {file ? <><strong>{file.name}</strong><span>{size} · Archivo XLSX</span><small>Haga clic para reemplazar</small></> : <><strong>Seleccione Master Plan MLP 2026.xlsx</strong><span>o arrastre el archivo aquí</span><small>Se procesará directamente la hoja MLP_</small></>}
+      <b className="excel-uploader__file-role">Libro maestro</b><div className="excel-uploader__file-icon">X</div>
+      {file ? <><strong>{file.name}</strong><span>{size} · Archivo XLSX</span><small>Haga clic para reemplazar</small></> : <><strong>Seleccione DB Avance Campaña de Perforación</strong><span>o arrastre el archivo aquí</span><small>Se procesará la hoja AVANCE PROGRAMA</small></>}
     </div>
     {(busy || stage === 'success') && <div className="excel-uploader__progress"><div><span>{status}</span><strong>{progress}%</strong></div><div className="excel-uploader__track"><i style={{ width: `${progress}%` }} /></div></div>}
     {error && <div className="excel-uploader__alert excel-uploader__alert--error"><strong>No fue posible validar o procesar</strong><span>{error}</span></div>}
     {validation && !error && <div className="excel-uploader__alert excel-uploader__alert--success"><strong>Master Plan válido</strong><span>{validation}</span></div>}
     {result && <section className="excel-uploader__result"><div className="excel-uploader__success-icon">✓</div><div className="excel-uploader__result-copy"><span>Proceso completado</span><h3>{result.count?.toLocaleString('es-CL')} registros</h3><p>{result.message}</p><p className="excel-uploader__map-message">{result.published ? 'La tabla Curvas_S fue actualizada en la geodatabase.' : 'Resultado generado sin modificar Curvas_S.'}</p>{curveRows.length > 0 && <button type="button" className="excel-uploader__export" onClick={exportCurvesCsv}>Exportar CSV</button>}</div></section>}
     {chartRows.length > 0 && <section className="excel-uploader__chart">
-      <div className="excel-uploader__chart-head"><div><strong>Avance acumulado</strong><small>Presupuesto versus real por mes</small></div><select value={activeCurveType} onChange={event => setSelectedCurveType(event.target.value)} aria-label="Seleccionar tipo de curva">{curveTypes.map(type => <option key={type} value={type}>{type}</option>)}</select></div>
+      <div className="excel-uploader__chart-head"><div><strong>Avance acumulado</strong><small>Presupuesto versus real por mes</small></div><div><select value={activeCurveType} onChange={event => setSelectedCurveType(event.target.value)} aria-label="Seleccionar categoría">{curveTypes.map(type => <option key={type} value={type}>{type}</option>)}</select><select value={activeCurveYear} onChange={event => setSelectedCurveYear(event.target.value)} aria-label="Seleccionar año">{curveYears.map(year => <option key={year} value={year}>{year}</option>)}</select></div></div>
       <div className="excel-uploader__chart-kpis"><div><span>Presupuesto</span><strong>{lastBudget.toLocaleString('es-CL', { maximumFractionDigits: 2 })}</strong></div><div><span>Real</span><strong>{lastReal.toLocaleString('es-CL', { maximumFractionDigits: 2 })}</strong></div><div><span>Cumplimiento</span><strong>{compliance.toLocaleString('es-CL', { maximumFractionDigits: 1 })}%</strong></div></div>
       <div className="excel-uploader__chart-scroll"><svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} role="img" aria-label={`Curva acumulada para ${activeCurveType}`}>
         {[0, .25, .5, .75, 1].map(ratio => <g key={ratio}><line x1={chartPadding.left} y1={chartY(chartMax * ratio)} x2={chartWidth - chartPadding.right} y2={chartY(chartMax * ratio)} className="grid" /><text x={chartPadding.left - 8} y={chartY(chartMax * ratio) + 3} textAnchor="end">{Math.round(chartMax * ratio).toLocaleString('es-CL')}</text></g>)}
@@ -475,7 +480,7 @@ const CurvesTab = ({ fallbackToken, curvesSubmitJobUrl: configuredCurvesUrl = CU
       <div className="excel-uploader__table-scroll"><table><thead><tr>{curveFields.map(name => <th key={name}>{name}</th>)}</tr></thead><tbody>{curveRows.map((feature, index) => <tr key={index}>{curveFields.map(name => <td key={name}>{formatCurveValue(name, curveAttribute(feature.attributes || {}, name))}</td>)}</tr>)}</tbody></table></div>
     </section>}
     <div className="excel-uploader__section-head excel-uploader__section-head--mode"><h3>2. Modo de ejecución</h3><small>Publicación opcional</small></div>
-    <label className={`excel-uploader__publish-option${publish ? ' is-selected' : ''}`}><input type="checkbox" checked={publish} onChange={event => setPublish(event.target.checked)} disabled={busy} /><span><strong>Publicar en Curvas_S</strong><small>Reemplaza los 60 registros de la tabla. Sin marcar, solo valida y genera el resultado temporal.</small></span></label>
+    <label className={`excel-uploader__publish-option${publish ? ' is-selected' : ''}`}><input type="checkbox" checked={publish} onChange={event => setPublish(event.target.checked)} disabled={busy} /><span><strong>Publicar en Curvas_S</strong><small>Reemplaza la tabla con todos los periodos y categorías detectados. Sin marcar, solo valida y genera el resultado temporal.</small></span></label>
     <div className="excel-uploader__actions"><button type="button" className="excel-uploader__primary" onClick={run} disabled={!file || busy || Boolean(publish && result?.published)}>{busy ? <><i className="excel-uploader__spinner" />Procesando…</> : publish && result?.published ? 'Publicado en Curvas_S' : publish && result?.table?.features?.length ? 'Publicar resultado validado' : publish ? 'Procesar y publicar' : 'Procesar sin publicar'}</button><button type="button" onClick={reset} disabled={busy || !file}>Limpiar</button></div>
   </main>
 }
