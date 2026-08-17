@@ -6,6 +6,7 @@ from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 PORTAL_URL = "https://sig.aminerals.cl/portal"
+TABLE_ITEM_ID = "a143e48aae57415eb73c0dbb80bf3e4e"
 TABLE_URL = "https://sig.aminerals.cl/server/rest/services/Hosted/Estado_Actualizacion_Cargas/FeatureServer/0"
 LOCAL_CREDENTIALS = Path(r"D:\Credenciales\AMSA.json")
 
@@ -41,11 +42,13 @@ def update_status(key, process, filename, records, session_user="", full_name=""
             "f": "json", "username": username, "password": password,
             "client": "referer", "referer": "https://sig.aminerals.cl", "expiration": "60",
         })["token"]
+        item = _post(f"{portal}/sharing/rest/content/items/{TABLE_ITEM_ID}", {"f": "json", "token": token})
+        table_url = str(item.get("url") or TABLE_URL).rstrip("/") + "/0"
         if session_user and (not full_name or not email):
             profile = _post(f"{portal}/sharing/rest/community/users/{quote(session_user)}", {"f": "json", "token": token})
             full_name = full_name or profile.get("fullName", "")
             email = email or profile.get("email", "")
-        query = _post(f"{TABLE_URL}/query", {
+        query = _post(f"{table_url}/query", {
             "f": "json", "token": token, "where": "CLAVE='{}'".format(key.replace("'", "''")),
             "outFields": "OBJECTID", "returnGeometry": "false",
         })
@@ -59,7 +62,7 @@ def update_status(key, process, filename, records, session_user="", full_name=""
         features, operation = query.get("features") or [], "adds"
         if features:
             attributes["OBJECTID"], operation = features[0]["attributes"]["OBJECTID"], "updates"
-        result = _post(f"{TABLE_URL}/applyEdits", {
+        result = _post(f"{table_url}/applyEdits", {
             "f": "json", "token": token, operation: json.dumps([{"attributes": attributes}], ensure_ascii=False),
         })
         edit = (result.get("updateResults") or result.get("addResults") or [{}])[0]
