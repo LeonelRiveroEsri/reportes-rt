@@ -32,7 +32,7 @@ SONDAJES_FIELDS = [
     "av_mts_preparacion", "r_fch_inicio", "r_fch_termino",
     "av_fch_ini", "av_fch_term",
 ]
-CURVAS_FIELDS = ["TIPO", "MES", "PRESUPUESTO", "REAL", "AÑO"]
+CURVAS_FIELDS = ["TIPO", "FECHA", "AÑO", "MES", "PRESUPUESTO", "REAL"]
 
 
 def _actual_fields(dataset):
@@ -76,18 +76,16 @@ def _validate_source(source, kind):
 
     fields = _ordered_fields(source, CURVAS_FIELDS)
     tipo = fields[CURVAS_FIELDS.index("TIPO")]
-    mes = fields[CURVAS_FIELDS.index("MES")]
+    fecha = fields[CURVAS_FIELDS.index("FECHA")]
     keys = []
-    with arcpy.da.SearchCursor(source, [tipo, mes]) as rows:
-        for type_value, month_value in rows:
-            key = (str(type_value or "").strip().upper(), str(month_value or "").strip().upper())
+    with arcpy.da.SearchCursor(source, [tipo, fecha]) as rows:
+        for type_value, date_value in rows:
+            key = (str(type_value or "").strip().upper(), date_value)
             if not all(key):
-                raise ValueError("Curvas S contiene TIPO o MES vacío.")
+                raise ValueError("Curvas S contiene TIPO o FECHA vacío.")
             keys.append(key)
     if len(keys) != len(set(keys)):
-        raise ValueError("Curvas S contiene combinaciones TIPO/MES duplicadas.")
-    if count != 60:
-        raise ValueError(f"Curvas S contiene {count} registros; se esperaban 60.")
+        raise ValueError("Curvas S contiene combinaciones TIPO/FECHA duplicadas.")
     return count, fields, fields
 
 
