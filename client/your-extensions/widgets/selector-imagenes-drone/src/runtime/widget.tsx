@@ -113,8 +113,10 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   const [opacityEditorId, setOpacityEditorId] = React.useState('')
   const handles = React.useRef<any[]>([])
   const initializedCatalog = React.useRef('')
-  const swipeRef = React.useRef<any>(null)
   const swipeClonesRef = React.useRef<any[]>([])
+  const swipeClipsRef = React.useRef<Array<{ layerView: any, clip: any }>>([])
+  const swipeOverlayRef = React.useRef<HTMLDivElement>(null)
+  const swipePointerCleanupRef = React.useRef<() => void>(null)
 
   const clearHandles = () => {
     handles.current.forEach(handle => handle?.remove?.())
@@ -231,11 +233,12 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   }
 
   const closeSwipe = React.useCallback(() => {
-    if (swipeRef.current && jimuMapView?.view) {
-      jimuMapView.view.ui.remove(swipeRef.current)
-      swipeRef.current.destroy?.()
-    }
-    swipeRef.current = null
+    swipeClipsRef.current.forEach(({ layerView, clip }) => layerView.clips?.remove(clip))
+    swipeClipsRef.current = []
+    swipePointerCleanupRef.current?.()
+    swipePointerCleanupRef.current = null
+    swipeOverlayRef.current?.remove()
+    swipeOverlayRef.current = null
     swipeClonesRef.current.forEach(layer => jimuMapView?.view?.map?.remove(layer))
     swipeClonesRef.current = []
     setSwipeActive(false)
@@ -277,16 +280,57 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       secondClone.listMode = 'hide'
       jimuMapView.view.map.addMany([firstClone, secondClone])
       swipeClonesRef.current = [firstClone, secondClone]
-      const [Swipe] = await loadArcGISJSAPIModules(['esri/widgets/Swipe'])
-      const swipe = new Swipe({
-        view: jimuMapView.view,
-        leadingLayers: [firstClone],
-        trailingLayers: [secondClone],
-        direction: 'horizontal',
-        position: 50
-      })
-      jimuMapView.view.ui.add(swipe)
-      swipeRef.current = swipe
+      const [ClipRect] = await loadArcGISJSAPIModules(['esri/views/layers/support/ClipRect'])
+      const [firstLayerView, secondLayerView] = await Promise.all([
+        jimuMapView.view.whenLayerView(firstClone),
+        jimuMapView.view.whenLayerView(secondClone)
+      ])
+      const firstView = firstLayerView as any
+      const secondView = secondLayerView as any
+      if (!firstView.clips || !secondView.clips) throw new Error('El navegador no admite recorte de estas vistas de capa.')
+      const leadingClip = new ClipRect({ left: 0, top: 0, right: '50%', bottom: 0 })
+      const trailingClip = new ClipRect({ left: '50%', top: 0, right: 0, bottom: 0 })
+      firstView.clips.add(leadingClip)
+      secondView.clips.add(trailingClip)
+      swipeClipsRef.current = [
+        { layerView: firstView, clip: leadingClip },
+        { layerView: secondView, clip: trailingClip }
+      ]
+
+      const overlay = document.createElement('div')
+      overlay.setAttribute('aria-label', 'Control de comparación Swipe')
+      Object.assign(overlay.style, { position: 'absolute', inset: '0', zIndex: '20', pointerEvents: 'none', overflow: 'hidden' })
+      const divider = document.createElement('div')
+      Object.assign(divider.style, { position: 'absolute', left: '50%', top: '0', bottom: '0', width: '4px', marginLeft: '-2px', background: '#fff', borderLeft: '1px solid #18394b', borderRight: '1px solid #18394b', cursor: 'col-resize', pointerEvents: 'auto', touchAction: 'none', boxShadow: '0 0 5px rgba(0,0,0,.35)' })
+      const handle = document.createElement('div')
+      handle.textContent = '↔'
+      Object.assign(handle.style, { position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: '38px', height: '42px', display: 'grid', placeItems: 'center', color: '#087f86', fontSize: '19px', background: '#fff', border: '1px solid #496b77', borderRadius: '6px', boxShadow: '0 2px 8px rgba(0,0,0,.25)' })
+      divider.appendChild(handle)
+      overlay.appendChild(divider)
+      ;(jimuMapView.view.container as HTMLDivElement).appendChild(overlay)
+      swipeOverlayRef.current = overlay
+
+      const updatePosition = (clientX: number) => {
+        const bounds = (jimuMapView.view.container as HTMLDivElement).getBoundingClientRect()
+        const percent = Math.max(2, Math.min(98, ((clientX - bounds.left) / bounds.width) * 100))
+        divider.style.left = `${percent}%`
+        leadingClip.right = `${100 - percent}%`
+        trailingClip.left = `${percent}%`
+      }
+      let dragging = false
+      const onDown = (event: PointerEvent) => { event.preventDefault(); event.stopPropagation(); dragging = true; divider.setPointerCapture(event.pointerId); updatePosition(event.clientX) }
+      const onMove = (event: PointerEvent) => { if (!dragging) return; event.preventDefault(); event.stopPropagation(); updatePosition(event.clientX) }
+      const onUp = (event: PointerEvent) => { event.preventDefault(); event.stopPropagation(); dragging = false; if (divider.hasPointerCapture(event.pointerId)) divider.releasePointerCapture(event.pointerId) }
+      divider.addEventListener('pointerdown', onDown)
+      divider.addEventListener('pointermove', onMove)
+      divider.addEventListener('pointerup', onUp)
+      divider.addEventListener('pointercancel', onUp)
+      swipePointerCleanupRef.current = () => {
+        divider.removeEventListener('pointerdown', onDown)
+        divider.removeEventListener('pointermove', onMove)
+        divider.removeEventListener('pointerup', onUp)
+        divider.removeEventListener('pointercancel', onUp)
+      }
       setSwipeActive(true)
       first.layer.visible = false
       second.layer.visible = false
@@ -297,8 +341,9 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   }
 
   React.useEffect(() => () => {
-    if (swipeRef.current && jimuMapView?.view) jimuMapView.view.ui.remove(swipeRef.current)
-    swipeRef.current?.destroy?.()
+    swipeClipsRef.current.forEach(({ layerView, clip }) => layerView.clips?.remove(clip))
+    swipePointerCleanupRef.current?.()
+    swipeOverlayRef.current?.remove()
     swipeClonesRef.current.forEach(layer => jimuMapView?.view?.map?.remove(layer))
   }, [jimuMapView])
 
@@ -387,6 +432,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
           {opacityEditorId === item.id && <div className="drone-selector__opacity"><span>Transparencia</span><input type="range" min="0" max="100" value={Math.round((1 - (item.layer.opacity ?? 1)) * 100)} onChange={event => setLayerOpacity(item, 100 - Number(event.target.value))} /><b>{Math.round((1 - (item.layer.opacity ?? 1)) * 100)}%</b></div>}
           {compareIds[0] === item.id && <div className="drone-selector__overlap-tree">
             <div className="drone-selector__overlap-head"><strong>Imágenes que se superponen</strong><span>{overlapCount} encontradas</span></div>
+            {swipeError && <div className="drone-selector__inline-error">{swipeError}</div>}
             {!overlapCount && <p>No se encontraron otras imágenes cuya extensión intersecte este vuelo.</p>}
             {overlapGroups.map(group => <details key={group.year} open>
               <summary><span>{group.year}</span><b>{group.items.length}</b></summary>
