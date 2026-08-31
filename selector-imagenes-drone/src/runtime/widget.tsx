@@ -36,9 +36,21 @@ const collectLeafLayers = (group: any, parentTitle: string): FlightItem[] => {
 }
 
 const findGroup = (map: any, title: string): any => {
+  const path = String(title || 'Vuelos Drone PAO/Imagenes de Drone')
+    .split(/[/>]/).map(part => part.trim()).filter(Boolean)
+  let collection = map?.layers
+  let pathMatch: any = null
+  for (const segment of path) {
+    pathMatch = collection?.find?.((layer: any) => layer?.type === 'group' && matchesGroupTitle(layer.title, segment)) || null
+    if (!pathMatch) break
+    collection = pathMatch.layers
+  }
+  if (pathMatch && path.length) return pathMatch
+
+  const leafTitle = path[path.length - 1] || title
   let match: any = null
   map?.allLayers?.forEach((layer: any) => {
-    if (!match && layer?.type === 'group' && matchesGroupTitle(layer.title, title)) match = layer
+    if (!match && layer?.type === 'group' && matchesGroupTitle(layer.title, leafTitle)) match = layer
   })
   return match
 }
@@ -70,7 +82,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     clearHandles()
     try {
       await jimuMapView.view.when()
-      const configuredTitle = props.config.groupTitle || 'Imagenes Drone'
+      const configuredTitle = props.config.groupTitle || 'Vuelos Drone PAO/Imagenes de Drone'
       const group = findGroup(jimuMapView.view.map, configuredTitle)
       setGroupFound(Boolean(group))
       if (!group) {
