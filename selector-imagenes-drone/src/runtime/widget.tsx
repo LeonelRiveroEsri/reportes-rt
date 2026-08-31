@@ -1,4 +1,4 @@
-import { React, AllWidgetProps } from 'jimu-core'
+import { React, AllWidgetProps, SessionManager } from 'jimu-core'
 import { JimuMapView, JimuMapViewComponent, loadArcGISJSAPIModules } from 'jimu-arcgis'
 import { IMConfig } from '../config'
 import { matchesGroupTitle, normalizeText, parseFlightName, ParsedFlightName } from './drone-utils'
@@ -18,6 +18,14 @@ interface VectorItem {
   type: string
   layer: any
   visible: boolean
+}
+
+interface DownloadRecord {
+  Name: string
+  Nombre_de_Vuelo: string
+  Sector: string
+  ProductNam: string | number
+  URL: string
 }
 
 type SortMode = 'newest' | 'oldest' | 'name'
@@ -48,6 +56,60 @@ const collectLeafLayers = (group: any, parentTitle: string): FlightItem[] => {
 
 const childrenOf = (item: any): any => item?.layers || item?.sublayers
 const itemTitle = (item: any): string => String(item?.title || item?.name || '')
+const FOOTPRINT_QUERY = 'https://sig.aminerals.cl/imgdyn/rest/services/CL_MLP_PAO/CL_MLP_PAO_27_Imagenes_Aereas_PAO_Image_Server/MapServer/124/query'
+const DOWNLOAD_GEOSUPPORT = 'https://sig.aminerals.cl/imgdyn/rest/services/CL_MLP_PAO/CL_MLP_PAO_IF_Ortho_Geosupport/ImageServer/file'
+const DOWNLOAD_TRANSVERSAL = 'https://sig.aminerals.cl/imgdyn/rest/services/CL_MLP_PAO/CL_MLP_PAO_IF_Ortho_Transversal/ImageServer/file'
+
+const canonicalFlightName = (value: any): string => normalizeText(String(value || '')
+  .replace(/^CL_MLP_PAO_IF_Ortho_/i, '')
+  .replace(/^\d+_(?=\d{2}_\d{2}_\d{2}_)/, '')
+  .replace(/\.tiff?$/i, ''))
+
+const destinationForSector = (sector: string, name: string): string => {
+  if (/Transversal/i.test(`${sector} ${name}`)) return 'Transversal_Aereo'
+  if (sector === 'EDT') return 'Puerto_Punta_Chungo_Drone'
+  if (['EM1', 'Estacion_Cabecera', 'NSTC_km_4p4_a_7p0', 'SRA-2-km-56p1-a-57p7-Area-2', 'SRA_2_km_54p6_a_56p1_Area-1'].includes(sector)) return 'Chacay_Drone'
+  if (['EV2', 'Orejas17_Ruta-D-865'].includes(sector)) return 'El_Mauro_Puerto_Punta_Chungo_Drone'
+  if (['Camino_Alternativo_Salamanca', 'EBD', 'Helipuerto', 'Subestacion-El-Mauro', 'Subestacion-El-Mauro_A_E35'].includes(sector)) return 'El_Mauro_Drone'
+  if (['Chacay_El_Mauro_Drone', 'DME7_PA7_IF6', 'DME9-PA12-IIFF8', 'DME_13', 'ED1', 'ED2', 'EM2_S2', 'EM3', 'Estacion_Intermedia', 'EV1', 'MonteAranda-NSTC-Km-84p2-a-82p3', 'Patio-19B-y-Armado', 'TORRE_E85_A_E_125', 'TORRES_E31_A_E48_PV4', 'TORRES_E48_A_E84_PV4', 'EC-TK100-SRA2'].includes(sector)) return 'Chacay_El_Mauro_Drone'
+  return ''
+}
+
+const buildDownloadUrl = (record: DownloadRecord, token: string): string => {
+  const rasterId = String(record.ProductNam || '')
+  if (!rasterId || !token) return ''
+  let rawUrl = String(record.URL || '')
+  if (!/^https?:/i.test(rawUrl)) {
+    const name = String(record.Name || '')
+    const flightName = String(record.Nombre_de_Vuelo || '')
+    let sector = String(record.Sector || '')
+    let dateFolder = ''
+    let rasterFile = ''
+    if (/^CL_MLP_PAO_IF_Ortho_/i.test(name)) {
+      const tail = name.replace(/^CL_MLP_PAO_IF_Ortho_/i, '')
+      const parts = tail.split('_')
+      if (parts.length < 4) return ''
+      dateFolder = `${parts[0]}_${parts[1]}`
+      rasterFile = `${name}.tif`
+      if (!sector) sector = parts.slice(3).join('_')
+    } else {
+      const parts = flightName.split('_')
+      if (parts.length < 5) return ''
+      dateFolder = `${parts[1]}_${parts[2]}`
+      if (!sector) sector = parts.slice(4).join('_')
+      rasterFile = `CL_MLP_PAO_IF_Ortho_${parts[1]}_${parts[2]}_${parts[3]}_${sector}.tif`
+    }
+    sector = sector.replace(/-(?:1|2)$/, '')
+    const folder = destinationForSector(sector, name)
+    if (!folder) return ''
+    const service = folder === 'Transversal_Aereo' ? DOWNLOAD_TRANSVERSAL : DOWNLOAD_GEOSUPPORT
+    rawUrl = `${service}?id=.\\${folder}\\${dateFolder}\\${rasterFile}&rasterId=`
+  }
+  const url = new URL(rawUrl.replace(/\\/g, '%5C'))
+  url.searchParams.set('rasterId', rasterId)
+  url.searchParams.set('token', token)
+  return url.toString()
+}
 
 const findRecursive = (collection: any, title: string): any => {
   let found: any = null
@@ -143,6 +205,8 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   const [activeTab, setActiveTab] = React.useState<'imagery' | 'vectors'>('imagery')
   const [vectors, setVectors] = React.useState<VectorItem[]>([])
   const [opacityEditorId, setOpacityEditorId] = React.useState('')
+  const [downloads, setDownloads] = React.useState<Record<string, DownloadRecord>>({})
+  const [downloadError, setDownloadError] = React.useState('')
   const handles = React.useRef<any[]>([])
   const initializedCatalog = React.useRef('')
   const swipeClonesRef = React.useRef<any[]>([])
@@ -176,6 +240,27 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
         initializedCatalog.current = configuredTitle
       }
       setFlights(items)
+      try {
+        const manager = SessionManager.getInstance()
+        const session = manager.getSessionByUrl(FOOTPRINT_QUERY) || manager.getMainSession()
+        const params = new URLSearchParams({
+          f: 'json', where: '1=1', outFields: 'Name,Nombre_de_Vuelo,Sector,ProductNam,URL',
+          returnGeometry: 'false', resultRecordCount: '2000'
+        })
+        if (session?.token) params.set('token', session.token)
+        const response = await fetch(`${FOOTPRINT_QUERY}?${params.toString()}`)
+        const payload = await response.json()
+        if (payload.error) throw new Error(payload.error.message)
+        const byName: Record<string, DownloadRecord> = {}
+        payload.features?.forEach((feature: any) => {
+          const record = feature.attributes as DownloadRecord
+          const key = canonicalFlightName(record.Name || record.Nombre_de_Vuelo)
+          if (key && !byName[key]) byName[key] = record
+        })
+        setDownloads(byName)
+      } catch (_) {
+        setDownloads({})
+      }
       const catalogRoot = group.layer || group
       const vectorItems: VectorItem[] = []
       jimuMapView.view.map.layers?.forEach((layer: any) => {
@@ -396,6 +481,29 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     setVectors(current => current.map(layer => layer.id === item.id ? { ...layer, visible: item.layer.visible } : layer))
   }
 
+  const downloadFlight = (item: FlightItem) => {
+    setDownloadError('')
+    const record = downloads[canonicalFlightName(item.title)]
+    if (!record) {
+      setDownloadError(`No se encontrÃ³ un footprint de descarga para ${item.place}.`)
+      return
+    }
+    const manager = SessionManager.getInstance()
+    const session = manager.getSessionByUrl(record.URL || DOWNLOAD_GEOSUPPORT) || manager.getMainSession()
+    const url = buildDownloadUrl(record, session?.token)
+    if (!url) {
+      setDownloadError('No fue posible construir una URL de descarga autenticada para esta imagen.')
+      return
+    }
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.target = '_blank'
+    anchor.rel = 'noopener'
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+  }
+
   const overlapGroups = React.useMemo(() => {
     const base = flights.find(item => item.id === compareIds[0])
     if (!base) return [] as Array<{ year: string, items: Array<{ flight: FlightItem, percent: number }> }>
@@ -460,13 +568,14 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       </section>
 
       <main className="drone-selector__list" aria-busy={loading}>
+        {downloadError && <div className="drone-selector__download-error">{downloadError}<button onClick={() => setDownloadError('')}>×</button></div>}
         {filtered.map(item => <article key={item.id} className={`${item.visible ? 'is-visible' : ''} ${compareIds.includes(item.id) ? 'is-comparing' : ''}`}>
           <button className="drone-selector__eye" title={item.visible ? 'Ocultar vuelo' : 'Mostrar vuelo'} aria-label={item.visible ? 'Ocultar vuelo' : 'Mostrar vuelo'} onClick={() => toggleVisibility(item)}>{item.visible ? '◉' : '○'}</button>
           <button className="drone-selector__flight" onClick={() => toggleVisibility(item)}>
             <span className="drone-selector__date">{item.date ? item.dateKey.split('-').reverse().join('/') : 'SIN FECHA'}</span>
             <strong>{item.place}</strong><small title={item.title}>{item.parentTitle}</small>
           </button>
-          <div className="drone-selector__actions"><button title="Comparar" className={compareIds.includes(item.id) ? 'is-active' : ''} onClick={() => toggleCompare(item)}>⇄</button><button title="Transparencia" className={opacityEditorId === item.id ? 'is-active' : ''} onClick={() => setOpacityEditorId(current => current === item.id ? '' : item.id)}>◐</button><button title="Acercar" onClick={() => zoomTo(item)}>⌖</button></div>
+          <div className="drone-selector__actions"><button title="Descargar GeoTIFF" disabled={!downloads[canonicalFlightName(item.title)]} onClick={() => downloadFlight(item)}>⇩</button><button title="Comparar" className={compareIds.includes(item.id) ? 'is-active' : ''} onClick={() => toggleCompare(item)}>⇄</button><button title="Transparencia" className={opacityEditorId === item.id ? 'is-active' : ''} onClick={() => setOpacityEditorId(current => current === item.id ? '' : item.id)}>◐</button><button title="Acercar" onClick={() => zoomTo(item)}>⌖</button></div>
           {opacityEditorId === item.id && <div className="drone-selector__opacity"><span>Transparencia</span><input type="range" min="0" max="100" value={Math.round((1 - (item.layer.opacity ?? 1)) * 100)} onChange={event => setLayerOpacity(item, 100 - Number(event.target.value))} /><b>{Math.round((1 - (item.layer.opacity ?? 1)) * 100)}%</b></div>}
           {compareIds[0] === item.id && <div className="drone-selector__overlap-tree">
             <div className="drone-selector__overlap-head"><strong>Imágenes que se superponen</strong><span>{overlapCount} encontradas</span></div>

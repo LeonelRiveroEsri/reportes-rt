@@ -71,6 +71,10 @@
     button { display: grid; width: 27px; height: 27px; place-items: center; border: 0; border-radius: 5px; color: #6f858f; background: transparent; cursor: pointer; font-size: 13px; }
     button:hover, button.is-active { color: var(--teal); background: #dff1f1; }
     button.is-active { color: #a76b00; background: #fff1d8; }
+    button:disabled { color: #c3cdd1; cursor: not-allowed; background: transparent; }
+  }
+  &__download-error { display: flex; padding: 8px 12px; align-items: center; justify-content: space-between; gap: 8px; color: #8d3737; background: #fff0f0; font-size: 9px;
+    button { border: 0; color: inherit; background: transparent; cursor: pointer; font-size: 15px; }
   }
   &__opacity { display: grid; min-height: 38px; padding: 5px 12px 8px 39px; grid-column: 1 / -1; grid-template-columns: 76px 1fr 34px; align-items: center; gap: 8px; color: #6e838e; background: #f4f8f9; font-size: 8px;
     input { width: 100%; accent-color: var(--teal); }
