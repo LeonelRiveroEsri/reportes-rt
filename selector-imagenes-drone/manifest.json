@@ -1,0 +1,19 @@
+{
+  "name": "selector-imagenes-drone",
+  "label": "Selector de Imágenes Drone",
+  "type": "widget",
+  "version": "1.0.0",
+  "exbVersion": "1.10.0",
+  "author": "AMSA",
+  "description": "Explora, filtra, compara y analiza vuelos drone organizados en grupos de capas.",
+  "copyright": "",
+  "license": "http://www.apache.org/licenses/LICENSE-2.0",
+  "properties": {
+    "hasSettingPage": true
+  },
+  "translatedLocales": ["en"],
+  "defaultSize": {
+    "width": 420,
+    "height": 680
+  }
+}
