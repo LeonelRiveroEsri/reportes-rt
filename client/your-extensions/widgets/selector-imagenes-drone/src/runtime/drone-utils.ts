@@ -35,7 +35,12 @@ export const parseFlightName = (title: string): ParsedFlightName => {
 }
 
 export const matchesGroupTitle = (candidate: string, expected: string): boolean => {
-  const left = normalizeText(candidate)
-  const right = normalizeText(expected || 'Imagenes Drone')
+  const groupKey = (value: string) => normalizeText(value)
+    .replace(/\b(de|del|la|las|el|los)\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const left = groupKey(candidate)
+  const right = groupKey(expected || 'Imagenes de Drone')
   return left === right || left.includes(right)
 }

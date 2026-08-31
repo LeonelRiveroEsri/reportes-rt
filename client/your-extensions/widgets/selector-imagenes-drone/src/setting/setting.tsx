@@ -19,9 +19,9 @@ const Setting = (props: AllWidgetSettingProps<IMConfig>) => {
         useMapWidgetIds={props.useMapWidgetIds}
       />
       <label htmlFor={`${props.id}-group`}>Nombre del grupo</label>
-      <input id={`${props.id}-group`} value={props.config.groupTitle || 'Imagenes Drone'}
+      <input id={`${props.id}-group`} value={props.config.groupTitle || 'Vuelos Drone PAO/Imagenes de Drone'}
         onChange={event => update('groupTitle', event.target.value)} />
-      <small>La comparación ignora tildes y mayúsculas. También busca el nombre dentro de grupos anidados.</small>
+      <small>Use “/” para separar grupos anidados. La comparación ignora tildes, mayúsculas y conectores como “de”.</small>
     </section>
     <section>
       <span>COMPORTAMIENTO</span>
