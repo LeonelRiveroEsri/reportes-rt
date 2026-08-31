@@ -17,42 +17,60 @@ type SortMode = 'newest' | 'oldest' | 'name'
 const collectLeafLayers = (group: any, parentTitle: string): FlightItem[] => {
   const result: FlightItem[] = []
   const visit = (layer: any, parent: string) => {
-    if (layer?.type === 'group' && layer.layers) {
-      layer.layers.forEach((child: any) => visit(child, layer.title || parent))
+    const children = layer?.layers || layer?.sublayers
+    const title = String(layer?.title || layer?.name || '')
+    if (children?.length) {
+      children.forEach((child: any) => visit(child, title || parent))
       return
     }
     if (!layer) return
     result.push({
       id: String(layer.id || layer.uid || `${parent}-${layer.title}`),
-      title: String(layer.title || 'Vuelo sin nombre'),
+      title: title || 'Vuelo sin nombre',
       parentTitle: parent,
       layer,
       visible: Boolean(layer.visible),
-      ...parseFlightName(String(layer.title || ''))
+      ...parseFlightName(title)
     })
   }
-  group.layers?.forEach((layer: any) => visit(layer, group.title || parentTitle))
+  const children = group?.layers || group?.sublayers
+  children?.forEach((layer: any) => visit(layer, group.title || group.name || parentTitle))
   return result
 }
 
-const findGroup = (map: any, title: string): any => {
-  const path = String(title || 'Vuelos Drone PAO/Imagenes de Drone')
+const childrenOf = (item: any): any => item?.layers || item?.sublayers
+const itemTitle = (item: any): string => String(item?.title || item?.name || '')
+
+const findRecursive = (collection: any, title: string): any => {
+  let found: any = null
+  collection?.forEach((item: any) => {
+    if (found) return
+    if (matchesGroupTitle(itemTitle(item), title)) found = item
+    else found = findRecursive(childrenOf(item), title)
+  })
+  return found
+}
+
+const findCatalog = async (map: any, title: string): Promise<any> => {
+  const path = String(title || 'Vuelos Drone PAO/Imagenes Drone')
     .split(/[/>]/).map(part => part.trim()).filter(Boolean)
-  let collection = map?.layers
-  let pathMatch: any = null
-  for (const segment of path) {
-    pathMatch = collection?.find?.((layer: any) => layer?.type === 'group' && matchesGroupTitle(layer.title, segment)) || null
-    if (!pathMatch) break
-    collection = pathMatch.layers
+  const roots = map?.layers
+  const loadPromises: Promise<any>[] = []
+  roots?.forEach((root: any) => {
+    const loader = root?.loadAll || root?.load
+    if (loader) loadPromises.push(Promise.resolve(loader.call(root)).catch(() => null))
+  })
+  await Promise.all(loadPromises)
+
+  let current = findRecursive(roots, path[0])
+  for (const segment of path.slice(1)) {
+    current = findRecursive(childrenOf(current), segment)
+    if (!current) break
   }
-  if (pathMatch && path.length) return pathMatch
+  if (current) return current
 
   const leafTitle = path[path.length - 1] || title
-  let match: any = null
-  map?.allLayers?.forEach((layer: any) => {
-    if (!match && layer?.type === 'group' && matchesGroupTitle(layer.title, leafTitle)) match = layer
-  })
-  return match
+  return findRecursive(roots, leafTitle)
 }
 
 const Widget = (props: AllWidgetProps<IMConfig>) => {
@@ -82,8 +100,8 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     clearHandles()
     try {
       await jimuMapView.view.when()
-      const configuredTitle = props.config.groupTitle || 'Vuelos Drone PAO/Imagenes de Drone'
-      const group = findGroup(jimuMapView.view.map, configuredTitle)
+      const configuredTitle = props.config.groupTitle || 'Vuelos Drone PAO/Imagenes Drone'
+      const group = await findCatalog(jimuMapView.view.map, configuredTitle)
       setGroupFound(Boolean(group))
       if (!group) {
         setFlights([])
@@ -99,7 +117,8 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
           }))
         }
       })
-      if (group.layers?.on) handles.current.push(group.layers.on('change', scanMap))
+      const groupChildren = childrenOf(group)
+      if (groupChildren?.on) handles.current.push(groupChildren.on('change', scanMap))
       if (!items.length) setError('El grupo existe, pero no contiene capas de vuelo.')
     } catch (exception) {
       setError(exception instanceof Error ? exception.message : 'No fue posible leer las capas del mapa.')
@@ -133,7 +152,11 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   const zoomTo = async (item: FlightItem) => {
     if (!jimuMapView?.view || !item.layer) return
     try {
-      const target = item.layer.fullExtent || item.layer.extent
+      let target = item.layer.fullExtent || item.layer.extent
+      if (!target && item.layer.queryExtent) {
+        const result = await item.layer.queryExtent()
+        target = result?.extent
+      }
       if (target) await jimuMapView.view.goTo(target.expand ? target.expand(1.15) : target)
     } catch (_) {}
   }
