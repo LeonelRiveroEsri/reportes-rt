@@ -1,5 +1,5 @@
 import { React, AllWidgetProps } from 'jimu-core'
-import { JimuMapView, JimuMapViewComponent } from 'jimu-arcgis'
+import { JimuMapView, JimuMapViewComponent, loadArcGISJSAPIModules } from 'jimu-arcgis'
 import { IMConfig } from '../config'
 import { matchesGroupTitle, normalizeText, parseFlightName, ParsedFlightName } from './drone-utils'
 import './style.scss'
@@ -8,6 +8,14 @@ interface FlightItem extends ParsedFlightName {
   id: string
   title: string
   parentTitle: string
+  layer: any
+  visible: boolean
+}
+
+interface VectorItem {
+  id: string
+  title: string
+  type: string
   layer: any
   visible: boolean
 }
@@ -85,8 +93,15 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   const [sort, setSort] = React.useState<SortMode>('newest')
   const [analysisOpen, setAnalysisOpen] = React.useState(false)
   const [compareIds, setCompareIds] = React.useState<string[]>([])
-  const [compareValue, setCompareValue] = React.useState(50)
+  const [swipeActive, setSwipeActive] = React.useState(false)
+  const [swipeError, setSwipeError] = React.useState('')
+  const [activeTab, setActiveTab] = React.useState<'imagery' | 'vectors'>('imagery')
+  const [vectors, setVectors] = React.useState<VectorItem[]>([])
+  const [opacityEditorId, setOpacityEditorId] = React.useState('')
   const handles = React.useRef<any[]>([])
+  const initializedCatalog = React.useRef('')
+  const swipeRef = React.useRef<any>(null)
+  const swipeClonesRef = React.useRef<any[]>([])
 
   const clearHandles = () => {
     handles.current.forEach(handle => handle?.remove?.())
@@ -109,11 +124,35 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
         return
       }
       const items = collectLeafLayers(group, configuredTitle)
+      if (initializedCatalog.current !== configuredTitle) {
+        items.forEach(item => { item.layer.visible = false })
+        initializedCatalog.current = configuredTitle
+      }
       setFlights(items)
+      const catalogRoot = group.layer || group
+      const vectorItems: VectorItem[] = []
+      jimuMapView.view.map.layers?.forEach((layer: any) => {
+        if (layer === catalogRoot || layer.type === 'imagery') return
+        vectorItems.push({
+          id: String(layer.id || layer.uid || layer.title),
+          title: itemTitle(layer) || 'Capa sin nombre',
+          type: String(layer.type || 'layer'),
+          layer,
+          visible: Boolean(layer.visible)
+        })
+      })
+      setVectors(vectorItems)
       items.forEach(item => {
         if (item.layer?.watch) {
           handles.current.push(item.layer.watch('visible', (visible: boolean) => {
             setFlights(current => current.map(flight => flight.id === item.id ? { ...flight, visible } : flight))
+          }))
+        }
+      })
+      vectorItems.forEach(item => {
+        if (item.layer?.watch) {
+          handles.current.push(item.layer.watch('visible', (visible: boolean) => {
+            setVectors(current => current.map(layer => layer.id === item.id ? { ...layer, visible } : layer))
           }))
         }
       })
@@ -180,13 +219,88 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     })
   }
 
-  React.useEffect(() => {
-    if (compareIds.length !== 2) return
-    const first = flights.find(item => item.id === compareIds[0])
-    const second = flights.find(item => item.id === compareIds[1])
-    if (first?.layer) { first.layer.visible = true; first.layer.opacity = (100 - compareValue) / 100 }
-    if (second?.layer) { second.layer.visible = true; second.layer.opacity = compareValue / 100 }
-  }, [compareIds, compareValue, flights])
+  const closeSwipe = React.useCallback(() => {
+    if (swipeRef.current && jimuMapView?.view) {
+      jimuMapView.view.ui.remove(swipeRef.current)
+      swipeRef.current.destroy?.()
+    }
+    swipeRef.current = null
+    swipeClonesRef.current.forEach(layer => jimuMapView?.view?.map?.remove(layer))
+    swipeClonesRef.current = []
+    setSwipeActive(false)
+  }, [jimuMapView])
+
+  const showOnlySublayer = (collection: any, targetId: string): boolean => {
+    let collectionHasTarget = false
+    collection?.forEach((item: any) => {
+      const children = childrenOf(item)
+      const hasTarget = children?.length
+        ? showOnlySublayer(children, targetId)
+        : String(item.id) === targetId
+      item.visible = hasTarget
+      collectionHasTarget = collectionHasTarget || hasTarget
+    })
+    return collectionHasTarget
+  }
+
+  const startSwipe = async () => {
+    if (compareIds.length !== 2 || !jimuMapView?.view) return
+    closeSwipe()
+    setSwipeError('')
+    try {
+      const first = flights.find(item => item.id === compareIds[0])
+      const second = flights.find(item => item.id === compareIds[1])
+      const firstSource = first?.layer?.layer
+      const secondSource = second?.layer?.layer
+      if (!first || !second || !firstSource?.clone || !secondSource?.clone) {
+        throw new Error('Las capas seleccionadas no pertenecen a un MapImageLayer compatible.')
+      }
+      const firstClone = firstSource.clone()
+      const secondClone = secondSource.clone()
+      firstClone.title = `Comparación A · ${first.place}`
+      secondClone.title = `Comparación B · ${second.place}`
+      await Promise.all([firstClone.load(), secondClone.load()])
+      showOnlySublayer(firstClone.sublayers, first.id)
+      showOnlySublayer(secondClone.sublayers, second.id)
+      firstClone.listMode = 'hide'
+      secondClone.listMode = 'hide'
+      jimuMapView.view.map.addMany([firstClone, secondClone])
+      swipeClonesRef.current = [firstClone, secondClone]
+      const [Swipe] = await loadArcGISJSAPIModules(['esri/widgets/Swipe'])
+      const swipe = new Swipe({
+        view: jimuMapView.view,
+        leadingLayers: [firstClone],
+        trailingLayers: [secondClone],
+        direction: 'horizontal',
+        position: 50
+      })
+      jimuMapView.view.ui.add(swipe)
+      swipeRef.current = swipe
+      setSwipeActive(true)
+      first.layer.visible = false
+      second.layer.visible = false
+    } catch (exception) {
+      closeSwipe()
+      setSwipeError(exception instanceof Error ? exception.message : 'No fue posible iniciar la comparación Swipe.')
+    }
+  }
+
+  React.useEffect(() => () => {
+    if (swipeRef.current && jimuMapView?.view) jimuMapView.view.ui.remove(swipeRef.current)
+    swipeRef.current?.destroy?.()
+    swipeClonesRef.current.forEach(layer => jimuMapView?.view?.map?.remove(layer))
+  }, [jimuMapView])
+
+  const setLayerOpacity = (item: { layer: any }, value: number) => {
+    item.layer.opacity = value / 100
+    setFlights(current => [...current])
+    setVectors(current => [...current])
+  }
+
+  const toggleVector = (item: VectorItem) => {
+    item.layer.visible = !item.layer.visible
+    setVectors(current => current.map(layer => layer.id === item.id ? { ...layer, visible: item.layer.visible } : layer))
+  }
 
   const clearFilters = () => { setQuery(''); setYear(''); setMonth('') }
   const unconfigured = !props.useMapWidgetIds?.length
@@ -202,7 +316,12 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     {!unconfigured && error && <div className="drone-selector__alert"><strong>No se pudo cargar el catálogo</strong><span>{error}</span><button onClick={scanMap}>Reintentar</button></div>}
 
     {!unconfigured && groupFound && <>
-      <section className="drone-selector__tools">
+      <nav className="drone-selector__tabs">
+        <button className={activeTab === 'imagery' ? 'is-active' : ''} onClick={() => setActiveTab('imagery')}>Imágenes <b>{flights.length}</b></button>
+        <button className={activeTab === 'vectors' ? 'is-active' : ''} onClick={() => setActiveTab('vectors')}>Capas vectoriales <b>{vectors.length}</b></button>
+      </nav>
+
+      {activeTab === 'imagery' && <><section className="drone-selector__tools">
         <label className="drone-selector__search"><span>⌕</span><input aria-label="Buscar vuelos" value={query} placeholder="Buscar sector, vuelo o fecha…" onChange={event => setQuery(event.target.value)} />{query && <button onClick={() => setQuery('')}>×</button>}</label>
         <div className="drone-selector__filters">
           <select aria-label="Año" value={year} onChange={event => { setYear(event.target.value); setMonth('') }}><option value="">Todos los años</option>{years.map(value => <option key={value}>{value}</option>)}</select>
@@ -216,8 +335,13 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
         <button className="drone-selector__analysis-toggle" onClick={() => setAnalysisOpen(value => !value)}><span>▥ Resumen y comparación</span><b>{analysisOpen ? '−' : '+'}</b></button>
         {analysisOpen && <div className="drone-selector__analysis-body">
           <div className="drone-selector__kpis"><div><strong>{years.filter(value => value !== 'Sin fecha').length}</strong><span>Años</span></div><div><strong>{new Set(flights.map(item => item.place)).size}</strong><span>Sectores</span></div><div><strong>{compareIds.length}/2</strong><span>Comparar</span></div></div>
-          <p>Use el botón ⇄ de dos vuelos para compararlos por transparencia.</p>
-          {compareIds.length === 2 && <div className="drone-selector__compare"><span>{flights.find(item => item.id === compareIds[0])?.place}</span><input type="range" min="0" max="100" value={compareValue} onChange={event => setCompareValue(Number(event.target.value))} /><span>{flights.find(item => item.id === compareIds[1])?.place}</span></div>}
+          <p>Seleccione dos vuelos con ⇄ y active la cortina Swipe.</p>
+          {compareIds.length === 2 && <div className="drone-selector__swipe-controls">
+            <span>{flights.find(item => item.id === compareIds[0])?.place}</span>
+            <span>{flights.find(item => item.id === compareIds[1])?.place}</span>
+            <button onClick={swipeActive ? closeSwipe : startSwipe}>{swipeActive ? 'Cerrar Swipe' : 'Iniciar Swipe'}</button>
+          </div>}
+          {swipeError && <div className="drone-selector__inline-error">{swipeError}</div>}
         </div>}
       </section>
 
@@ -228,10 +352,21 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
             <span className="drone-selector__date">{item.date ? item.dateKey.split('-').reverse().join('/') : 'SIN FECHA'}</span>
             <strong>{item.place}</strong><small title={item.title}>{item.parentTitle}</small>
           </button>
-          <div className="drone-selector__actions"><button title="Comparar" className={compareIds.includes(item.id) ? 'is-active' : ''} onClick={() => toggleCompare(item)}>⇄</button><button title="Acercar" onClick={() => zoomTo(item)}>⌖</button></div>
+          <div className="drone-selector__actions"><button title="Comparar" className={compareIds.includes(item.id) ? 'is-active' : ''} onClick={() => toggleCompare(item)}>⇄</button><button title="Transparencia" className={opacityEditorId === item.id ? 'is-active' : ''} onClick={() => setOpacityEditorId(current => current === item.id ? '' : item.id)}>◐</button><button title="Acercar" onClick={() => zoomTo(item)}>⌖</button></div>
+          {opacityEditorId === item.id && <div className="drone-selector__opacity"><span>Transparencia</span><input type="range" min="0" max="100" value={Math.round((1 - (item.layer.opacity ?? 1)) * 100)} onChange={event => setLayerOpacity(item, 100 - Number(event.target.value))} /><b>{Math.round((1 - (item.layer.opacity ?? 1)) * 100)}%</b></div>}
         </article>)}
         {!loading && !filtered.length && <div className="drone-selector__no-results"><strong>Sin coincidencias</strong><p>Pruebe otra fecha o término de búsqueda.</p><button onClick={clearFilters}>Restablecer filtros</button></div>}
-      </main>
+      </main></>}
+
+      {activeTab === 'vectors' && <main className="drone-selector__list drone-selector__vector-list">
+        <div className="drone-selector__vector-help">Encienda, apague y ajuste la transparencia de las capas operacionales del web map.</div>
+        {vectors.map(item => <article key={item.id} className={item.visible ? 'is-visible' : ''}>
+          <button className="drone-selector__eye" onClick={() => toggleVector(item)}>{item.visible ? '◉' : '○'}</button>
+          <button className="drone-selector__flight" onClick={() => toggleVector(item)}><strong>{item.title}</strong><small>{item.type}</small></button>
+          <div className="drone-selector__actions"><button title="Transparencia" className={opacityEditorId === `v-${item.id}` ? 'is-active' : ''} onClick={() => setOpacityEditorId(current => current === `v-${item.id}` ? '' : `v-${item.id}`)}>◐</button></div>
+          {opacityEditorId === `v-${item.id}` && <div className="drone-selector__opacity"><span>Transparencia</span><input type="range" min="0" max="100" value={Math.round((1 - (item.layer.opacity ?? 1)) * 100)} onChange={event => setLayerOpacity(item, 100 - Number(event.target.value))} /><b>{Math.round((1 - (item.layer.opacity ?? 1)) * 100)}%</b></div>}
+        </article>)}
+      </main>}
     </>}
     {loading && <div className="drone-selector__loading"><i></i><span>Actualizando vuelos…</span></div>}
     <footer><span className={groupFound ? 'is-ready' : ''}></span>{groupFound ? 'Catálogo conectado al mapa' : 'Esperando catálogo'}</footer>
