@@ -101,6 +101,18 @@ const resolveMapImageLayer = (sublayer: any, map: any): any => {
   return owner
 }
 
+const mapServiceUrl = (sublayer: any, map: any): string => {
+  const owner = resolveMapImageLayer(sublayer, map)
+  const candidates = [owner?.url, sublayer?.url]
+  let current = sublayer?.parent || sublayer?.parentSublayer
+  while (current) {
+    candidates.push(current.url)
+    current = current.parent || current.parentSublayer
+  }
+  const found = candidates.find(value => typeof value === 'string' && /\/MapServer(?:\/\d+)?\/?$/i.test(value))
+  return found ? String(found).replace(/\/\d+\/?$/, '') : ''
+}
+
 const overlapPercent = (first: any, second: any): number => {
   const a = first?.fullExtent || first?.extent
   const b = second?.fullExtent || second?.extent
@@ -284,13 +296,20 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     try {
       const first = flights.find(item => item.id === selectedIds[0])
       const second = flights.find(item => item.id === selectedIds[1])
-      const firstSource = resolveMapImageLayer(first?.layer, jimuMapView.view.map)
-      const secondSource = resolveMapImageLayer(second?.layer, jimuMapView.view.map)
-      if (!first || !second || !firstSource?.clone || !secondSource?.clone) {
-        throw new Error('Las capas seleccionadas no pertenecen a un MapImageLayer compatible.')
+      if (!first || !second) return
+      const firstSource = resolveMapImageLayer(first.layer, jimuMapView.view.map)
+      const secondSource = resolveMapImageLayer(second.layer, jimuMapView.view.map)
+      const firstUrl = mapServiceUrl(first.layer, jimuMapView.view.map)
+      const secondUrl = mapServiceUrl(second.layer, jimuMapView.view.map)
+      const [MapImageLayer, ClipRect] = await loadArcGISJSAPIModules([
+        'esri/layers/MapImageLayer',
+        'esri/views/layers/support/ClipRect'
+      ])
+      if ((!firstSource?.clone && !firstUrl) || (!secondSource?.clone && !secondUrl)) {
+        throw new Error('No fue posible obtener la URL del servicio MapServer de las imágenes seleccionadas.')
       }
-      const firstClone = firstSource.clone()
-      const secondClone = secondSource.clone()
+      const firstClone = firstSource?.clone ? firstSource.clone() : new MapImageLayer({ url: firstUrl })
+      const secondClone = secondSource?.clone ? secondSource.clone() : new MapImageLayer({ url: secondUrl })
       firstClone.title = `Comparación A · ${first.place}`
       secondClone.title = `Comparación B · ${second.place}`
       await Promise.all([firstClone.load(), secondClone.load()])
@@ -300,7 +319,6 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       secondClone.listMode = 'hide'
       jimuMapView.view.map.addMany([firstClone, secondClone])
       swipeClonesRef.current = [firstClone, secondClone]
-      const [ClipRect] = await loadArcGISJSAPIModules(['esri/views/layers/support/ClipRect'])
       const [firstLayerView, secondLayerView] = await Promise.all([
         jimuMapView.view.whenLayerView(firstClone),
         jimuMapView.view.whenLayerView(secondClone)
