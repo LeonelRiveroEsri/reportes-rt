@@ -1,5 +1,5 @@
 [build]
-  command = "python scripts/pack_netlify.py --widget reportes_rt --widget procesador_excel"
+  command = "python scripts/pack_netlify.py --widget reportes_rt --widget procesador_excel --widget selector-imagenes-drone"
   publish = "public"
 
 [[headers]]

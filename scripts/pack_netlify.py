@@ -17,6 +17,8 @@ def find_dist_widgets(client_dir):
 def inject_token(widget_dir):
     config_path = widget_dir / "config.json"
     config = json.loads(config_path.read_text(encoding="utf-8-sig"))
+    if "fallbackToken" not in config:
+        return
     token = os.environ.get("EXB_FALLBACK_TOKEN", "").strip()
     if token:
         config["fallbackToken"] = token

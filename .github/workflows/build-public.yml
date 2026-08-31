@@ -22,7 +22,7 @@ jobs:
         with:
           python-version: "3.x"
       - name: Build public
-        run: python scripts/pack_netlify.py --widget reportes_rt --widget procesador_excel
+        run: python scripts/pack_netlify.py --widget reportes_rt --widget procesador_excel --widget selector-imagenes-drone
       - name: Commit public when changed
         shell: bash
         run: |

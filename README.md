@@ -1,7 +1,8 @@
 # reportes-rt
 
 Widgets de ArcGIS Experience Builder y Python Toolboxes para consultar
-inspecciones F-MA-018, generar reportes y procesar archivos Excel.
+inspecciones F-MA-018, generar reportes, procesar archivos Excel y explorar
+vuelos drone de PAO.
 
 ## Estructura
 
@@ -9,6 +10,8 @@ inspecciones F-MA-018, generar reportes y procesar archivos Excel.
 - `client/your-extensions/widgets/procesador_excel`: carga XLSX con drag and drop.
 - `client/dist/widgets/reportes_rt`: bundle compilado.
 - `client/dist/widgets/procesador_excel`: bundle compilado para Netlify.
+- `client/your-extensions/widgets/selector-imagenes-drone`: fuente del selector PAO.
+- `client/dist/widgets/selector-imagenes-drone`: bundle compilado del selector PAO.
 - `gptools`: Python Toolbox, generador ReportLab y recursos.
 - `gptools/excel_processor_gp`: Python Toolbox que cuenta registros de un XLSX.
 - `scripts/pack_netlify.py`: genera `public/exb/widgets/reportes_rt`.
@@ -22,6 +25,7 @@ Conecte este repositorio al sitio y configure la variable protegida
 ```text
 https://<sitio>.netlify.app/exb/widgets/reportes_rt/manifest.json
 https://<sitio>.netlify.app/exb/widgets/procesador_excel/manifest.json
+https://<sitio>.netlify.app/exb/widgets/selector-imagenes-drone/manifest.json
 ```
 
 El workflow `build-public.yml` mantiene una copia navegable sin secretos.
