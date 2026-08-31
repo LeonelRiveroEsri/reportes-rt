@@ -19,9 +19,9 @@ const Setting = (props: AllWidgetSettingProps<IMConfig>) => {
         useMapWidgetIds={props.useMapWidgetIds}
       />
       <label htmlFor={`${props.id}-group`}>Nombre del grupo</label>
-      <input id={`${props.id}-group`} value={props.config.groupTitle || 'Vuelos Drone PAO/Imagenes de Drone'}
+      <input id={`${props.id}-group`} value={props.config.groupTitle || 'Vuelos Drone PAO/Imagenes Drone'}
         onChange={event => update('groupTitle', event.target.value)} />
-      <small>Use “/” para separar grupos anidados. La comparación ignora tildes, mayúsculas y conectores como “de”.</small>
+      <small>Use “/” para separar grupos o subcapas anidadas. Admite GroupLayer y jerarquías internas de MapServer.</small>
     </section>
     <section>
       <span>COMPORTAMIENTO</span>
