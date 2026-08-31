@@ -81,6 +81,19 @@ const findCatalog = async (map: any, title: string): Promise<any> => {
   return findRecursive(roots, leafTitle)
 }
 
+const overlapPercent = (first: any, second: any): number => {
+  const a = first?.fullExtent || first?.extent
+  const b = second?.fullExtent || second?.extent
+  if (!a || !b) return 0
+  const aWkid = a.spatialReference?.latestWkid || a.spatialReference?.wkid
+  const bWkid = b.spatialReference?.latestWkid || b.spatialReference?.wkid
+  if (aWkid && bWkid && aWkid !== bWkid) return 0
+  const width = Math.max(0, Math.min(a.xmax, b.xmax) - Math.max(a.xmin, b.xmin))
+  const height = Math.max(0, Math.min(a.ymax, b.ymax) - Math.max(a.ymin, b.ymin))
+  const baseArea = Math.max(0, (a.xmax - a.xmin) * (a.ymax - a.ymin))
+  return baseArea > 0 ? Math.round((width * height / baseArea) * 100) : 0
+}
+
 const Widget = (props: AllWidgetProps<IMConfig>) => {
   const [jimuMapView, setJimuMapView] = React.useState<JimuMapView>(null)
   const [flights, setFlights] = React.useState<FlightItem[]>([])
@@ -212,11 +225,9 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   }
 
   const toggleCompare = (item: FlightItem) => {
-    setCompareIds(current => {
-      if (current.includes(item.id)) return current.filter(id => id !== item.id)
-      if (current.length >= 2) return [current[1], item.id]
-      return [...current, item.id]
-    })
+    closeSwipe()
+    setSwipeError('')
+    setCompareIds(current => current[0] === item.id ? [] : [item.id])
   }
 
   const closeSwipe = React.useCallback(() => {
@@ -243,13 +254,13 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     return collectionHasTarget
   }
 
-  const startSwipe = async () => {
-    if (compareIds.length !== 2 || !jimuMapView?.view) return
+  const startSwipe = async (selectedIds: string[] = compareIds) => {
+    if (selectedIds.length !== 2 || !jimuMapView?.view) return
     closeSwipe()
     setSwipeError('')
     try {
-      const first = flights.find(item => item.id === compareIds[0])
-      const second = flights.find(item => item.id === compareIds[1])
+      const first = flights.find(item => item.id === selectedIds[0])
+      const second = flights.find(item => item.id === selectedIds[1])
       const firstSource = first?.layer?.layer
       const secondSource = second?.layer?.layer
       if (!first || !second || !firstSource?.clone || !secondSource?.clone) {
@@ -302,8 +313,32 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     setVectors(current => current.map(layer => layer.id === item.id ? { ...layer, visible: item.layer.visible } : layer))
   }
 
+  const overlapGroups = React.useMemo(() => {
+    const base = flights.find(item => item.id === compareIds[0])
+    if (!base) return [] as Array<{ year: string, items: Array<{ flight: FlightItem, percent: number }> }>
+    const candidates = flights
+      .filter(item => item.id !== base.id)
+      .map(flight => ({ flight, percent: overlapPercent(base.layer, flight.layer) }))
+      .filter(candidate => candidate.percent > 0)
+      .sort((left, right) => right.flight.date?.getTime() - left.flight.date?.getTime() || right.percent - left.percent)
+    const grouped = new Map<string, Array<{ flight: FlightItem, percent: number }>>()
+    candidates.forEach(candidate => {
+      const key = candidate.flight.year
+      grouped.set(key, [...(grouped.get(key) || []), candidate])
+    })
+    return Array.from(grouped.entries()).map(([groupYear, items]) => ({ year: groupYear, items }))
+  }, [flights, compareIds])
+
+  const compareWith = (base: FlightItem, candidate: FlightItem) => {
+    const selected = [base.id, candidate.id]
+    setCompareIds(selected)
+    void startSwipe(selected)
+  }
+
   const clearFilters = () => { setQuery(''); setYear(''); setMonth('') }
   const unconfigured = !props.useMapWidgetIds?.length
+  const comparisonBase = flights.find(item => item.id === compareIds[0])
+  const overlapCount = overlapGroups.reduce((total, group) => total + group.items.length, 0)
 
   return <div className="drone-selector">
     {props.useMapWidgetIds?.[0] && <JimuMapViewComponent useMapWidgetId={props.useMapWidgetIds[0]} onActiveViewChange={setJimuMapView} />}
@@ -334,13 +369,9 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       <section className="drone-selector__analysis">
         <button className="drone-selector__analysis-toggle" onClick={() => setAnalysisOpen(value => !value)}><span>▥ Resumen y comparación</span><b>{analysisOpen ? '−' : '+'}</b></button>
         {analysisOpen && <div className="drone-selector__analysis-body">
-          <div className="drone-selector__kpis"><div><strong>{years.filter(value => value !== 'Sin fecha').length}</strong><span>Años</span></div><div><strong>{new Set(flights.map(item => item.place)).size}</strong><span>Sectores</span></div><div><strong>{compareIds.length}/2</strong><span>Comparar</span></div></div>
-          <p>Seleccione dos vuelos con ⇄ y active la cortina Swipe.</p>
-          {compareIds.length === 2 && <div className="drone-selector__swipe-controls">
-            <span>{flights.find(item => item.id === compareIds[0])?.place}</span>
-            <span>{flights.find(item => item.id === compareIds[1])?.place}</span>
-            <button onClick={swipeActive ? closeSwipe : startSwipe}>{swipeActive ? 'Cerrar Swipe' : 'Iniciar Swipe'}</button>
-          </div>}
+          <div className="drone-selector__kpis"><div><strong>{years.filter(value => value !== 'Sin fecha').length}</strong><span>Años</span></div><div><strong>{new Set(flights.map(item => item.place)).size}</strong><span>Sectores</span></div><div><strong>{comparisonBase ? overlapCount : '—'}</strong><span>Solapadas</span></div></div>
+          <p>Presione ⇄ en una imagen base. Se abrirá un árbol con los vuelos que se superponen espacialmente.</p>
+          {swipeActive && <div className="drone-selector__swipe-controls"><span>{comparisonBase?.place}</span><span>Comparación activa</span><button onClick={closeSwipe}>Cerrar Swipe</button></div>}
           {swipeError && <div className="drone-selector__inline-error">{swipeError}</div>}
         </div>}
       </section>
@@ -354,6 +385,17 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
           </button>
           <div className="drone-selector__actions"><button title="Comparar" className={compareIds.includes(item.id) ? 'is-active' : ''} onClick={() => toggleCompare(item)}>⇄</button><button title="Transparencia" className={opacityEditorId === item.id ? 'is-active' : ''} onClick={() => setOpacityEditorId(current => current === item.id ? '' : item.id)}>◐</button><button title="Acercar" onClick={() => zoomTo(item)}>⌖</button></div>
           {opacityEditorId === item.id && <div className="drone-selector__opacity"><span>Transparencia</span><input type="range" min="0" max="100" value={Math.round((1 - (item.layer.opacity ?? 1)) * 100)} onChange={event => setLayerOpacity(item, 100 - Number(event.target.value))} /><b>{Math.round((1 - (item.layer.opacity ?? 1)) * 100)}%</b></div>}
+          {compareIds[0] === item.id && <div className="drone-selector__overlap-tree">
+            <div className="drone-selector__overlap-head"><strong>Imágenes que se superponen</strong><span>{overlapCount} encontradas</span></div>
+            {!overlapCount && <p>No se encontraron otras imágenes cuya extensión intersecte este vuelo.</p>}
+            {overlapGroups.map(group => <details key={group.year} open>
+              <summary><span>{group.year}</span><b>{group.items.length}</b></summary>
+              {group.items.map(candidate => <button key={candidate.flight.id} onClick={() => compareWith(item, candidate.flight)}>
+                <span><strong>{candidate.flight.dateKey.split('-').reverse().join('/')} · {candidate.flight.place}</strong><small>{candidate.flight.title}</small></span>
+                <b>{candidate.percent}%</b>
+              </button>)}
+            </details>)}
+          </div>}
         </article>)}
         {!loading && !filtered.length && <div className="drone-selector__no-results"><strong>Sin coincidencias</strong><p>Pruebe otra fecha o término de búsqueda.</p><button onClick={clearFilters}>Restablecer filtros</button></div>}
       </main></>}
