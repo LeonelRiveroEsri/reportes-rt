@@ -81,6 +81,26 @@ const findCatalog = async (map: any, title: string): Promise<any> => {
   return findRecursive(roots, leafTitle)
 }
 
+const resolveMapImageLayer = (sublayer: any, map: any): any => {
+  let current = sublayer
+  const visited = new Set<any>()
+  while (current && !visited.has(current)) {
+    visited.add(current)
+    if (current.type === 'map-image' && current.clone) return current
+    if (current.layer?.type === 'map-image' && current.layer?.clone) return current.layer
+    current = current.parent || current.parentSublayer
+  }
+
+  let owner: any = null
+  map?.layers?.forEach((layer: any) => {
+    if (owner || layer?.type !== 'map-image' || !layer?.clone) return
+    const all = layer.allSublayers
+    if (all?.find?.((candidate: any) => candidate === sublayer)) owner = layer
+    else if (all?.some?.((candidate: any) => candidate === sublayer)) owner = layer
+  })
+  return owner
+}
+
 const overlapPercent = (first: any, second: any): number => {
   const a = first?.fullExtent || first?.extent
   const b = second?.fullExtent || second?.extent
@@ -264,8 +284,8 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     try {
       const first = flights.find(item => item.id === selectedIds[0])
       const second = flights.find(item => item.id === selectedIds[1])
-      const firstSource = first?.layer?.layer
-      const secondSource = second?.layer?.layer
+      const firstSource = resolveMapImageLayer(first?.layer, jimuMapView.view.map)
+      const secondSource = resolveMapImageLayer(second?.layer, jimuMapView.view.map)
       if (!first || !second || !firstSource?.clone || !secondSource?.clone) {
         throw new Error('Las capas seleccionadas no pertenecen a un MapImageLayer compatible.')
       }
