@@ -9,6 +9,17 @@
     p { margin: 0; color: var(--muted); font-size: 10px; }
     button { width: 34px; height: 34px; border: 1px solid #c8d6dc; border-radius: 7px; color: var(--teal); background: #fff; cursor: pointer; font-size: 19px; }
     button:hover { border-color: var(--teal); background: #f0fafa; }
+    button.is-active { color: #fff; border-color: var(--teal); background: var(--teal); }
+  }
+  &__panel-actions { display: flex; flex: 0 0 auto; gap: 6px; }
+  &__collapse-button { font-weight: 700; }
+  &.is-unpinned:not(.is-collapsed) { box-shadow: 5px 0 18px rgba(24,57,75,.16); }
+  &.is-collapsed { width: 52px; min-width: 52px; min-height: 0; overflow: visible; background: transparent; box-shadow: 3px 0 12px rgba(24,57,75,.14);
+    > :not(header) { display: none !important; }
+    header { width: 52px; height: 100%; min-height: 100%; padding: 10px 8px; align-items: flex-start; justify-content: center; border: 0; background: rgba(255,255,255,.97); }
+    .drone-selector__identity { display: none; }
+    .drone-selector__panel-actions { width: 36px; justify-content: center; }
+    .drone-selector__collapse-button { width: 36px; height: 40px; font-size: 25px; box-shadow: 0 2px 8px rgba(24,57,75,.15); }
   }
   &__tools { padding: 13px 16px 10px; flex: 0 0 auto; border-bottom: 1px solid var(--line); background: #fff; }
   &__tabs { display: grid; min-height: 43px; flex: 0 0 auto; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--line); background: #fff;
@@ -118,6 +129,8 @@
     span.is-ready { background: #2a9b73; box-shadow: 0 0 0 3px rgba(42,155,115,.12); }
   }
 }
+
+.drone-selector-layout-collapsed { z-index: 20 !important; pointer-events: auto; transition: width .2s ease, min-width .2s ease, max-width .2s ease, flex-basis .2s ease; }
 
 @keyframes drone-spin { to { transform: rotate(360deg); } }
 

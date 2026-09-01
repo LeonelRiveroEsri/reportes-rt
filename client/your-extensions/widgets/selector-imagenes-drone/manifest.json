@@ -2,7 +2,7 @@
   "name": "selector-imagenes-drone",
   "label": "Selector de Imágenes Drone",
   "type": "widget",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "exbVersion": "1.10.0",
   "author": "AMSA",
   "description": "Explora, filtra, compara y analiza vuelos drone organizados en grupos de capas.",
