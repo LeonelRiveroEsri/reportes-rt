@@ -207,7 +207,11 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   const [opacityEditorId, setOpacityEditorId] = React.useState('')
   const [downloads, setDownloads] = React.useState<Record<string, DownloadRecord>>({})
   const [downloadError, setDownloadError] = React.useState('')
+  const [collapsed, setCollapsed] = React.useState(false)
+  const [pinned, setPinned] = React.useState(true)
   const handles = React.useRef<any[]>([])
+  const containerRef = React.useRef<HTMLDivElement>(null)
+  const resizedHostRef = React.useRef<{ element: HTMLElement, style: string | null }>(null)
   const initializedCatalog = React.useRef('')
   const swipeClonesRef = React.useRef<any[]>([])
   const swipeClipsRef = React.useRef<Array<{ layerView: any, clip: any }>>([])
@@ -302,6 +306,38 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     scanMap()
     return clearHandles
   }, [scanMap])
+
+  React.useLayoutEffect(() => {
+    const widget = containerRef.current
+    if (!widget) return
+    const host = (widget.closest('.layout-item') || widget.closest('.widget-renderer') || widget.parentElement) as HTMLElement
+    if (!host) return
+    if (collapsed) {
+      if (!resizedHostRef.current) resizedHostRef.current = { element: host, style: host.getAttribute('style') }
+      host.classList.add('drone-selector-layout-collapsed')
+      host.style.setProperty('width', '52px', 'important')
+      host.style.setProperty('min-width', '52px', 'important')
+      host.style.setProperty('max-width', '52px', 'important')
+      host.style.setProperty('flex', '0 0 52px', 'important')
+      host.style.setProperty('overflow', 'visible', 'important')
+    } else if (resizedHostRef.current) {
+      const saved = resizedHostRef.current
+      saved.element.classList.remove('drone-selector-layout-collapsed')
+      if (saved.style === null) saved.element.removeAttribute('style')
+      else saved.element.setAttribute('style', saved.style)
+      resizedHostRef.current = null
+    }
+    window.dispatchEvent(new Event('resize'))
+  }, [collapsed])
+
+  React.useEffect(() => () => {
+    const saved = resizedHostRef.current
+    if (!saved) return
+    saved.element.classList.remove('drone-selector-layout-collapsed')
+    if (saved.style === null) saved.element.removeAttribute('style')
+    else saved.element.setAttribute('style', saved.style)
+    window.dispatchEvent(new Event('resize'))
+  }, [])
 
   const years = React.useMemo(() => Array.from(new Set(flights.map(item => item.year))).sort().reverse(), [flights])
   const months = React.useMemo(() => Array.from(new Set(flights.filter(item => !year || item.year === year).map(item => item.month))), [flights, year])
@@ -531,11 +567,15 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   const comparisonBase = flights.find(item => item.id === compareIds[0])
   const overlapCount = overlapGroups.reduce((total, group) => total + group.items.length, 0)
 
-  return <div className="drone-selector">
+  return <div ref={containerRef} className={`drone-selector ${collapsed ? 'is-collapsed' : ''} ${pinned ? 'is-pinned' : 'is-unpinned'}`} onMouseEnter={() => { if (!pinned && collapsed) setCollapsed(false) }} onMouseLeave={() => { if (!pinned && !collapsed) setCollapsed(true) }}>
     {props.useMapWidgetIds?.[0] && <JimuMapViewComponent useMapWidgetId={props.useMapWidgetIds[0]} onActiveViewChange={setJimuMapView} />}
     <header>
-      <div><span>IMÁGENES AÉREAS</span><h2>Vuelos Drone PAO</h2><p>Exploración temporal y comparación visual</p></div>
-      <button type="button" title="Actualizar capas" onClick={scanMap} disabled={loading}>↻</button>
+      <div className="drone-selector__identity"><span>IMÁGENES AÉREAS</span><h2>Vuelos Drone PAO</h2><p>Exploración temporal y comparación visual</p></div>
+      <div className="drone-selector__panel-actions">
+        {!collapsed && <button type="button" title={pinned ? 'Desfijar panel' : 'Fijar panel'} aria-pressed={pinned} className={pinned ? 'is-active' : ''} onClick={() => setPinned(value => !value)}>{pinned ? '●' : '○'}</button>}
+        {!collapsed && <button type="button" title="Actualizar capas" onClick={scanMap} disabled={loading}>↻</button>}
+        <button type="button" title={collapsed ? 'Expandir panel' : 'Colapsar panel'} aria-expanded={!collapsed} className="drone-selector__collapse-button" onClick={() => setCollapsed(value => !value)}>{collapsed ? '›' : '‹'}</button>
+      </div>
     </header>
 
     {unconfigured && <div className="drone-selector__empty"><i>⌖</i><strong>Configure un mapa</strong><p>Abra los ajustes del widget y seleccione el Map Widget.</p></div>}
