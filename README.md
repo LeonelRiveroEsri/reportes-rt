@@ -1,14 +1,16 @@
 # reportes-rt
 
 Widgets de ArcGIS Experience Builder y Python Toolboxes para consultar
-inspecciones F-MA-018, generar reportes, procesar archivos Excel y explorar
-vuelos drone de PAO.
+inspecciones F-MA-018, generar reportes, analizar selecciones espaciales,
+procesar archivos Excel y explorar vuelos drone de PAO.
 
 ## Estructura
 
 - `client/your-extensions/widgets/reportes_rt`: fuente React/TypeScript.
+- `client/your-extensions/widgets/analisis-seleccion`: selección espacial, indicadores y exportación CSV, Excel y PDF.
 - `client/your-extensions/widgets/procesador_excel`: carga XLSX con drag and drop.
 - `client/dist/widgets/reportes_rt`: bundle compilado.
+- `client/dist/widgets/analisis-seleccion`: bundle compilado para Netlify.
 - `client/dist/widgets/procesador_excel`: bundle compilado para Netlify.
 - `client/your-extensions/widgets/selector-imagenes-drone`: fuente del selector PAO.
 - `client/dist/widgets/selector-imagenes-drone`: bundle compilado del selector PAO.
@@ -23,6 +25,7 @@ Conecte este repositorio al sitio y configure la variable protegida
 `EXB_FALLBACK_TOKEN`. `netlify.toml` ejecuta el empaquetador y publica `public`.
 
 ```text
+https://<sitio>.netlify.app/exb/widgets/analisis-seleccion/manifest.json
 https://<sitio>.netlify.app/exb/widgets/reportes_rt/manifest.json
 https://<sitio>.netlify.app/exb/widgets/procesador_excel/manifest.json
 https://<sitio>.netlify.app/exb/widgets/selector-imagenes-drone/manifest.json
