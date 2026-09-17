@@ -222,6 +222,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   const [analysisState, setAnalysisState] = React.useState<AnalysisState>('idle')
   const [activeTool, setActiveTool] = React.useState<DrawTool>(null)
   const [results, setResults] = React.useState<LayerSummary[]>([])
+  const [disabledLayerKeys, setDisabledLayerKeys] = React.useState<string[]>([])
   const [focusedLayerKey, setFocusedLayerKey] = React.useState('')
   const [areaSquareMeters, setAreaSquareMeters] = React.useState<number>(null)
   const [error, setError] = React.useState('')
@@ -238,9 +239,14 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   const analysisTokenRef = React.useRef(0)
   const mountedRef = React.useRef(true)
 
-  const total = React.useMemo(() => results.reduce((sum, result) => sum + result.count, 0), [results])
+  const activeResults = React.useMemo(() => {
+    const enabled = results.filter(result => disabledLayerKeys.indexOf(result.key) < 0)
+    const enabledTotal = enabled.reduce((sum, result) => sum + result.count, 0)
+    return enabled.map(result => ({ ...result, percent: enabledTotal ? (result.count / enabledTotal) * 100 : 0 }))
+  }, [disabledLayerKeys, results])
+  const total = React.useMemo(() => activeResults.reduce((sum, result) => sum + result.count, 0), [activeResults])
   const distributionSlices = React.useMemo<DistributionSlice[]>(() => {
-    const directResults = results.length > 6 ? results.slice(0, 5) : results
+    const directResults = activeResults.length > 6 ? activeResults.slice(0, 5) : activeResults
     const slices: DistributionSlice[] = directResults.map(result => ({
       key: result.key,
       title: result.title,
@@ -249,8 +255,8 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       color: result.color,
       targetLayerKey: result.key
     }))
-    if (results.length > 6) {
-      const remaining = results.slice(5)
+    if (activeResults.length > 6) {
+      const remaining = activeResults.slice(5)
       const remainingCount = remaining.reduce((sum, result) => sum + result.count, 0)
       slices.push({
         key: '__other-layers__',
@@ -261,8 +267,8 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       })
     }
     return slices
-  }, [results, total])
-  const focusedResult = results.find(result => result.key === focusedLayerKey) || results[0]
+  }, [activeResults, total])
+  const focusedResult = activeResults.find(result => result.key === focusedLayerKey) || activeResults[0]
   const relationship = props.config.spatialRelationship || 'intersects'
   const maxCategories = Math.max(3, Math.min(8, props.config.maxCategories || 5))
 
@@ -297,6 +303,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     try { jimuMapViewRef.current?.clearSelectedFeatures?.() } catch (_) {}
     if (removeDrawing) graphicsLayerRef.current?.removeAll?.()
     setResults([])
+    setDisabledLayerKeys([])
     setFocusedLayerKey('')
     setAreaSquareMeters(null)
     setError('')
@@ -328,6 +335,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     setAnalysisState('querying')
     setError('')
     setResults([])
+    setDisabledLayerKeys([])
     setFocusedLayerKey('')
     setAreaSquareMeters(null)
     try {
@@ -341,6 +349,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       const summaries = buildSummaries(selection, maxCategories)
       setAreaSquareMeters(area)
       setResults(summaries)
+      setDisabledLayerKeys([])
       setFocusedLayerKey(summaries[0]?.key || '')
       setAnalysisState(summaries.length ? 'ready' : 'empty')
     } catch (exception) {
@@ -425,6 +434,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       sketch.cancel()
       graphicsLayerRef.current?.removeAll?.()
       setResults([])
+      setDisabledLayerKeys([])
       setFocusedLayerKey('')
       setAreaSquareMeters(null)
       setError('')
@@ -474,6 +484,24 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     resetOutput(true)
   }
 
+  const toggleResultLayer = (result: LayerSummary) => {
+    if (exporting) return
+    const isDisabled = disabledLayerKeys.indexOf(result.key) >= 0
+    const layer = layerOf(result.features[0])
+    if (layer && 'visible' in layer) layer.visible = isDisabled
+    setDisabledLayerKeys(current => isDisabled
+      ? current.filter(key => key !== result.key)
+      : [...current, result.key])
+    setExportMessage('')
+    setExportError('')
+    if (!isDisabled && focusedLayerKey === result.key) {
+      const next = results.find(item => item.key !== result.key && disabledLayerKeys.indexOf(item.key) < 0)
+      setFocusedLayerKey(next?.key || '')
+    } else if (isDisabled && !focusedLayerKey) {
+      setFocusedLayerKey(result.key)
+    }
+  }
+
   const createExportContext = (generatedAt = new Date()): SelectionExportContext => {
     const mapView = jimuMapViewRef.current
     const map = mapView?.view?.map as any
@@ -487,7 +515,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       relationshipLabel: relationship === 'contains' ? 'Entidades contenidas' : 'Entidades que intersectan',
       total,
       areaLabel: formatArea(areaSquareMeters),
-      layers: results
+      layers: activeResults
     }
   }
 
@@ -514,7 +542,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
 
   const handleExportExcel = () => beginExport('excel', () => {
     const count = exportSelectionExcel(createExportContext())
-    setExportMessage(`Libro Excel generado con ${numberFormatter.format(count)} registros y ${results.length} capas.`)
+    setExportMessage(`Libro Excel generado con ${numberFormatter.format(count)} registros y ${activeResults.length} capas activas.`)
   })
 
   const handleExportPdf = () => beginExport('pdf', async () => {
@@ -550,6 +578,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     jimuMapViewRef.current = jimuMapView
     setActiveTool(null)
     setResults([])
+    setDisabledLayerKeys([])
     setFocusedLayerKey('')
     setAreaSquareMeters(null)
     setError('')
@@ -577,7 +606,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
 
   const unconfigured = !props.useMapWidgetIds?.length
   const isMapReady = Boolean(jimuMapView?.view)
-  const maxCount = results[0]?.count || 1
+  const maxCount = activeResults[0]?.count || 1
 
   return <div className="selection-analysis">
     {props.useMapWidgetIds?.[0] && <JimuMapViewComponent
@@ -671,10 +700,10 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       </div>}
 
       {analysisState === 'ready' && <section className="selection-analysis__results" aria-label="Resultados de la selección">
-        <div className="selection-analysis__sr-only" role="status" aria-live="polite" aria-atomic="true">Selección completada: {numberFormatter.format(total)} entidades en {results.length} capas.</div>
+        <div className="selection-analysis__sr-only" role="status" aria-live="polite" aria-atomic="true">Selección activa: {numberFormatter.format(total)} entidades en {activeResults.length} capas.</div>
         <section className="selection-analysis__kpis" aria-label="Indicadores principales">
           <article><span className="is-teal"><SvgIcon><path d="M4 7h16M7 4v16m10-16v16M4 12h16M4 17h16" /></SvgIcon></span><div><strong>{numberFormatter.format(total)}</strong><small>Entidades</small></div></article>
-          <article><span className="is-blue"><SvgIcon><path d="m4 8 8-4 8 4-8 4-8-4Z" /><path d="m4 12 8 4 8-4m-16 4 8 4 8-4" /></SvgIcon></span><div><strong>{results.length}</strong><small>Capas</small></div></article>
+          <article><span className="is-blue"><SvgIcon><path d="m4 8 8-4 8 4-8 4-8-4Z" /><path d="m4 12 8 4 8-4m-16 4 8 4 8-4" /></SvgIcon></span><div><strong>{activeResults.length}</strong><small>Capas activas</small></div></article>
           <article><span className="is-amber"><SvgIcon><path d="M5 5h14v14H5z" /><path d="M9 9h6v6H9z" /></SvgIcon></span><div><strong>{formatArea(areaSquareMeters)}</strong><small>Superficie</small></div></article>
         </section>
 
@@ -688,16 +717,16 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
               <span className="selection-analysis__export-icon">{exporting === 'csv' ? <i className="selection-analysis__spinner"></i> : <SvgIcon><path d="M6 3h9l4 4v14H6z" /><path d="M15 3v5h4M9 12h7M9 16h7" /></SvgIcon>}</span>
               <span><strong>CSV</strong><small>Capa activa</small></span>
             </button>
-            <button type="button" className="is-excel" disabled={Boolean(exporting)} onClick={() => { void handleExportExcel() }}>
+            <button type="button" className="is-excel" disabled={Boolean(exporting) || activeResults.length === 0} onClick={() => { void handleExportExcel() }}>
               <span className="selection-analysis__export-icon">{exporting === 'excel' ? <i className="selection-analysis__spinner"></i> : <SvgIcon><path d="M5 4h14v16H5zM5 9h14M10 9v11" /><path d="m7 12 2 5m0-5-2 5" /></SvgIcon>}</span>
               <span><strong>Excel</strong><small>Toda la selección</small></span>
             </button>
-            <button type="button" className="is-pdf" disabled={Boolean(exporting)} onClick={() => { void handleExportPdf() }}>
+            <button type="button" className="is-pdf" disabled={Boolean(exporting) || activeResults.length === 0} onClick={() => { void handleExportPdf() }}>
               <span className="selection-analysis__export-icon">{exporting === 'pdf' ? <i className="selection-analysis__spinner"></i> : <SvgIcon><path d="M6 3h9l4 4v14H6z" /><path d="M15 3v5h4M9 13h6M9 17h4" /></SvgIcon>}</span>
               <span><strong>PDF</strong><small>Reporte profesional</small></span>
             </button>
           </div>
-          <p className="selection-analysis__export-context">CSV exportará <strong>{focusedResult?.title}</strong>. Excel y PDF incluyen todas las capas.</p>
+          <p className="selection-analysis__export-context">CSV exportará <strong>{focusedResult?.title}</strong>. Excel y PDF incluyen solo las capas activas.</p>
           {exportMessage && <div className="selection-analysis__export-feedback is-success" role="status"><span>✓</span>{exportMessage}</div>}
           {exportError && <div className="selection-analysis__export-feedback is-error" role="alert"><span>!</span>{exportError}</div>}
         </section>
@@ -705,7 +734,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
         <section className="selection-analysis__chart-card">
           <div className="selection-analysis__section-heading">
             <div><span>DISTRIBUCIÓN</span><strong>Entidades por capa</strong></div>
-            <small>{results.length} con resultados</small>
+            <small>{activeResults.length} activas</small>
           </div>
           <div className="selection-analysis__distribution">
             <DonutChart slices={distributionSlices} total={total} />
@@ -729,7 +758,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
             <div><span>RANKING</span><strong>Volumen por capa</strong></div>
           </div>
           <div className="selection-analysis__bars">
-            {results.slice(0, 6).map(result => <button type="button" key={result.key} className={focusedResult?.key === result.key ? 'is-active' : ''} aria-pressed={focusedResult?.key === result.key} aria-controls={`${props.id}-layer-detail`} onClick={() => setFocusedLayerKey(result.key)}>
+            {activeResults.slice(0, 6).map(result => <button type="button" key={result.key} className={focusedResult?.key === result.key ? 'is-active' : ''} aria-pressed={focusedResult?.key === result.key} aria-controls={`${props.id}-layer-detail`} onClick={() => setFocusedLayerKey(result.key)}>
               <span title={result.title}>{result.title}</span><div><i style={{ width: `${Math.max(3, (result.count / maxCount) * 100)}%`, backgroundColor: result.color }}></i></div><strong>{numberFormatter.format(result.count)}</strong>
             </button>)}
           </div>
@@ -758,12 +787,20 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
           <div className="selection-analysis__section-heading">
             <div><span>DETALLE</span><strong>Capas seleccionadas</strong></div>
           </div>
-          {results.map((result, index) => <button type="button" key={result.key} className={focusedResult?.key === result.key ? 'is-active' : ''} aria-pressed={focusedResult?.key === result.key} aria-controls={`${props.id}-layer-detail`} onClick={() => setFocusedLayerKey(result.key)}>
-            <span className="selection-analysis__layer-order" style={{ borderColor: result.color, color: result.color }}>{index + 1 < 10 ? `0${index + 1}` : index + 1}</span>
-            <span className="selection-analysis__layer-name"><strong title={result.title}>{result.title}</strong><small>{humanizeGeometry(result.geometryType)} · {decimalFormatter.format(result.percent)}% de la selección</small></span>
-            <span className="selection-analysis__layer-count"><strong>{numberFormatter.format(result.count)}</strong><small>registros</small></span>
-            <span className="selection-analysis__chevron">›</span>
-          </button>)}
+          {results.map((result, index) => {
+            const isDisabled = disabledLayerKeys.indexOf(result.key) >= 0
+            const activeResult = activeResults.find(item => item.key === result.key)
+            return <div key={result.key} className={`selection-analysis__layer-row ${focusedResult?.key === result.key ? 'is-active' : ''} ${isDisabled ? 'is-disabled' : ''}`}>
+              <button type="button" className="selection-analysis__layer-main" disabled={isDisabled} aria-pressed={focusedResult?.key === result.key} aria-controls={`${props.id}-layer-detail`} onClick={() => setFocusedLayerKey(result.key)}>
+                <span className="selection-analysis__layer-order" style={{ borderColor: result.color, color: result.color }}>{index + 1 < 10 ? `0${index + 1}` : index + 1}</span>
+                <span className="selection-analysis__layer-name"><strong title={result.title}>{result.title}</strong><small>{isDisabled ? 'Apagada y excluida del análisis' : `${humanizeGeometry(result.geometryType)} · ${decimalFormatter.format(activeResult?.percent || 0)}% de la selección`}</small></span>
+                <span className="selection-analysis__layer-count"><strong>{numberFormatter.format(result.count)}</strong><small>registros</small></span>
+              </button>
+              <button type="button" className="selection-analysis__layer-toggle" role="switch" aria-checked={!isDisabled} aria-label={`${isDisabled ? 'Encender' : 'Apagar'} capa ${result.title}`} title={`${isDisabled ? 'Encender' : 'Apagar'} en el mapa`} onClick={() => toggleResultLayer(result)}>
+                <span><i></i></span>
+              </button>
+            </div>
+          })}
         </section>
 
         <button type="button" className="selection-analysis__new-selection" disabled={Boolean(exporting)} onClick={() => { void startDrawing('rectangle') }}>

@@ -4,6 +4,8 @@ Widget para ArcGIS Experience Builder Developer Edition 1.10. Permite dibujar un
 
 Versión 1.2.1: compatibilidad con el resultado de selección agrupado por `JimuLayerView` de Experience Builder 1.20.
 
+Versión 1.3.0: permite apagar y encender capas seleccionadas; el mapa, los indicadores, gráficos y reportes consideran únicamente las capas activas.
+
 ## Funcionalidad
 
 - Selección espacial integrada con los Data Sources de Experience Builder.
