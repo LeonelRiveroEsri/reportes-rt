@@ -57,6 +57,9 @@ def main():
         copied.append(source.name)
     if not copied:
         sys.exit("No se copiaron widgets")
+    chunks_source = dist_widgets / "chunks"
+    if chunks_source.exists():
+        shutil.copytree(chunks_source, out_widgets / "chunks")
     (out_root / "_headers").write_text(
         "/exb/*\n  Access-Control-Allow-Origin: *\n"
         "  Cache-Control: public, max-age=300\n", encoding="utf-8"

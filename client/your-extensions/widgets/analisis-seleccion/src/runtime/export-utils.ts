@@ -81,7 +81,7 @@ const normalizeText = (value: unknown): string => String(value ?? '').split(Stri
 
 const isDangerousSpreadsheetValue = (value: string): boolean => {
   const firstCharacter = value.charCodeAt(0)
-  return firstCharacter === 9 || firstCharacter === 10 || firstCharacter === 13 || FORMULA_PREFIX.test(value.trimStart())
+  return firstCharacter === 9 || firstCharacter === 10 || firstCharacter === 13 || FORMULA_PREFIX.test(value.replace(/^\s+/, ''))
 }
 
 const protectSpreadsheetString = (value: unknown): unknown => {
@@ -164,7 +164,7 @@ const safeFilePart = (value: string, fallback = 'seleccion'): string => {
 }
 
 const timestamp = (date: Date): string => {
-  const pad = (value: number) => String(value).padStart(2, '0')
+  const pad = (value: number) => value < 10 ? `0${value}` : String(value)
   return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}_${pad(date.getHours())}${pad(date.getMinutes())}`
 }
 
@@ -498,7 +498,7 @@ const reportFields = (summary: ExportLayerSummary): FieldInfo[] => {
   const preferred = [objectIdField, displayField].filter(Boolean)
   const ordered = [
     ...preferred.map(name => fields.find(field => field.name === name)).filter(Boolean),
-    ...fields.filter(field => !preferred.includes(field.name) && !/(blob|raster|xml|geometry)/i.test(field.type))
+    ...fields.filter(field => preferred.indexOf(field.name) < 0 && !/(blob|raster|xml|geometry)/i.test(field.type))
   ]
   const unique = new Map<string, FieldInfo>()
   ordered.forEach(field => unique.set(field.name, field))
