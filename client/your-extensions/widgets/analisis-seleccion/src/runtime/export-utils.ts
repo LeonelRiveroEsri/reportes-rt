@@ -15,9 +15,18 @@ export interface ExportLayerSummary {
   count: number
   percent: number
   color: string
+  legendSymbol?: LegendSymbolStyle
   categoryFieldAlias: string
   categories: ExportCategory[]
   features: any[]
+}
+
+export interface LegendSymbolStyle {
+  shape: 'point' | 'line' | 'polygon'
+  color: [number, number, number]
+  outlineColor: [number, number, number]
+  outlineWidth: number
+  size: number
 }
 
 export interface SelectionExportContext {
@@ -301,6 +310,56 @@ const hexToRgb = (hex: string): [number, number, number] => {
   ]
 }
 
+const layerColor = (layer: ExportLayerSummary): [number, number, number] => layer.legendSymbol?.color || hexToRgb(layer.color)
+
+const drawLegendSymbol = (doc: JsPDF, layer: ExportLayerSummary, x: number, y: number) => {
+  const symbol = layer.legendSymbol
+  if (!symbol) {
+    doc.setFillColor(...hexToRgb(layer.color))
+    doc.roundedRect(x, y - 2.7, 3.2, 3.2, 0.5, 0.5, 'F')
+    return
+  }
+  doc.setFillColor(...symbol.color)
+  doc.setDrawColor(...symbol.outlineColor)
+  doc.setLineWidth(Math.min(0.8, Math.max(0.2, symbol.outlineWidth * 0.25)))
+  if (symbol.shape === 'point') {
+    doc.circle(x + 1.6, y - 1.1, Math.min(2, Math.max(1.1, symbol.size * 0.16)), 'FD')
+  } else if (symbol.shape === 'line') {
+    doc.setLineWidth(Math.min(1.4, Math.max(0.5, symbol.outlineWidth * 0.5)))
+    doc.line(x, y - 1.1, x + 4.2, y - 1.1)
+  } else {
+    doc.rect(x, y - 2.8, 4.2, 3.4, 'FD')
+  }
+}
+
+const drawDonut = (doc: JsPDF, report: PdfExportContext, centerX: number, centerY: number, radius: number) => {
+  if (!report.total || !report.layers.length) return
+  let startAngle = -Math.PI / 2
+  report.layers.forEach(layer => {
+    const angle = (layer.count / report.total) * Math.PI * 2
+    const steps = Math.max(2, Math.ceil(angle / (Math.PI / 18)))
+    const points: Array<[number, number]> = [[centerX, centerY]]
+    for (let index = 0; index <= steps; index++) {
+      const current = startAngle + angle * index / steps
+      points.push([centerX + Math.cos(current) * radius, centerY + Math.sin(current) * radius])
+    }
+    const vectors = points.slice(1).map((point, index) => [point[0] - points[index][0], point[1] - points[index][1]])
+    doc.setFillColor(...layerColor(layer))
+    doc.lines(vectors, points[0][0], points[0][1], [1, 1], 'F', true)
+    startAngle += angle
+  })
+  doc.setFillColor(255, 255, 255)
+  doc.circle(centerX, centerY, radius * 0.56, 'F')
+  doc.setTextColor(24, 57, 74)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(10)
+  doc.text(report.total.toLocaleString('es-CL'), centerX, centerY + 1, { align: 'center' })
+  doc.setTextColor(91, 108, 118)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(5.5)
+  doc.text('ENTIDADES', centerX, centerY + 4.5, { align: 'center' })
+}
+
 const clipText = (doc: JsPDF, value: string, maxWidth: number): string => {
   const text = normalizeText(value)
   if (doc.getTextWidth(text) <= maxWidth) return text
@@ -361,8 +420,7 @@ const drawMapLegend = (doc: JsPDF, report: PdfExportContext, mapX: number, mapY:
 
   visibleLayers.forEach((layer, index) => {
     const rowY = y + 12 + index * rowHeight
-    doc.setFillColor(...hexToRgb(layer.color))
-    doc.roundedRect(x + 4, rowY - 2.7, 3.2, 3.2, 0.5, 0.5, 'F')
+    drawLegendSymbol(doc, layer, x + 4, rowY)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(52, 72, 82)
     doc.setFontSize(6.2)
@@ -457,19 +515,20 @@ const drawRanking = (doc: JsPDF, report: PdfExportContext) => {
   doc.text('DISTRIBUCIÓN DE ENTIDADES POR CAPA', x, y)
   doc.setTextColor(31, 61, 76)
   doc.setFontSize(10)
-  doc.text('Ranking de capas seleccionadas', x, y + 6)
+  doc.text('Distribución y ranking de capas activas', x, y + 6)
   if (!layers.length) return
+  drawDonut(doc, report, x + 24, y + 27, 17)
   const maximum = Math.max(...layers.map(layer => layer.count), 1)
   layers.forEach((layer, index) => {
     const rowY = y + 12 + index * 6.6
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(6.8)
     doc.setTextColor(61, 82, 93)
-    doc.text(clipText(doc, layer.title, 60), x, rowY + 2.3)
+    doc.text(clipText(doc, layer.title, 52), x + 48, rowY + 2.3)
     doc.setFillColor(235, 241, 243)
-    doc.roundedRect(x + 64, rowY, 174, 3.6, 1.8, 1.8, 'F')
-    doc.setFillColor(...hexToRgb(layer.color))
-    doc.roundedRect(x + 64, rowY, Math.max(2, 174 * layer.count / maximum), 3.6, 1.8, 1.8, 'F')
+    doc.roundedRect(x + 104, rowY, 134, 3.6, 1.8, 1.8, 'F')
+    doc.setFillColor(...layerColor(layer))
+    doc.roundedRect(x + 104, rowY, Math.max(2, 134 * layer.count / maximum), 3.6, 1.8, 1.8, 'F')
     doc.setFont('helvetica', 'bold')
     doc.setTextColor(31, 61, 76)
     doc.text(layer.count.toLocaleString('es-CL'), x + width, rowY + 2.8, { align: 'right' })
@@ -478,7 +537,7 @@ const drawRanking = (doc: JsPDF, report: PdfExportContext) => {
     doc.setTextColor(94, 112, 121)
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(6.5)
-    doc.text(`El resumen tabular incluye ${report.layers.length - layers.length} capas adicionales.`, x, y + 12 + layers.length * 6.6 + 2)
+    doc.text(`El resumen tabular incluye ${report.layers.length - layers.length} capas adicionales.`, x + 48, y + 12 + layers.length * 6.6 + 2)
   }
 }
 

@@ -10,6 +10,8 @@ Versión 1.3.1: vincula cada resultado con su `JimuLayerView` para controlar la 
 
 Versión 1.3.2: resuelve `JimuLayerView` en respuestas antiguas por matrices y reconstruye el resaltado global usando únicamente las capas activas.
 
+Versión 1.4.0: el PDF usa muestras de la simbología del renderer del mapa e incorpora el gráfico donut de distribución.
+
 ## Funcionalidad
 
 - Selección espacial integrada con los Data Sources de Experience Builder.

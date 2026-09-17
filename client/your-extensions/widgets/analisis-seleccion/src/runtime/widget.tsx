@@ -5,6 +5,7 @@ import {
   exportLayerCsv,
   exportSelectionExcel,
   exportSelectionPdf,
+  LegendSymbolStyle,
   SelectionExportContext
 } from './export-utils'
 import './style.scss'
@@ -28,6 +29,7 @@ interface LayerSummary {
   count: number
   percent: number
   color: string
+  legendSymbol?: LegendSymbolStyle
   categoryField: string
   categoryFieldAlias: string
   categories: CategoryItem[]
@@ -44,6 +46,39 @@ interface DistributionSlice {
 }
 
 const COLORS = ['#0f766e', '#2563eb', '#f59e0b', '#8b5cf6', '#db2777', '#0891b2', '#65a30d', '#ea580c']
+
+const symbolColor = (value: any, fallback: [number, number, number]): [number, number, number] => {
+  if (!value) return fallback
+  const rgba = typeof value.toRgba === 'function' ? value.toRgba() : value
+  if (Array.isArray(rgba) && rgba.length >= 3) return [Number(rgba[0]) || 0, Number(rgba[1]) || 0, Number(rgba[2]) || 0]
+  if (typeof rgba === 'object' && rgba !== null && 'r' in rgba) return [Number(rgba.r) || 0, Number(rgba.g) || 0, Number(rgba.b) || 0]
+  return fallback
+}
+
+const legendSymbolOf = (layer: any, feature: any, fallbackColor: string, geometryType: string): LegendSymbolStyle => {
+  let symbol = feature?.symbol
+  if (!symbol) {
+    try { symbol = layer?.renderer?.getSymbol?.(feature) } catch (_) {}
+  }
+  if (!symbol || typeof symbol.then === 'function') symbol = layer?.renderer?.symbol
+  const fallback = (() => {
+    const normalized = fallbackColor.replace('#', '')
+    return /^[0-9a-f]{6}$/i.test(normalized)
+      ? [parseInt(normalized.slice(0, 2), 16), parseInt(normalized.slice(2, 4), 16), parseInt(normalized.slice(4, 6), 16)] as [number, number, number]
+      : [15, 118, 110] as [number, number, number]
+  })()
+  const shape: LegendSymbolStyle['shape'] = geometryType === 'point' || geometryType === 'multipoint'
+    ? 'point'
+    : geometryType === 'polyline' ? 'line' : 'polygon'
+  const outline = symbol?.outline
+  return {
+    shape,
+    color: symbolColor(symbol?.color, fallback),
+    outlineColor: symbolColor(outline?.color || symbol?.color, fallback),
+    outlineWidth: Math.max(0.5, Number(outline?.width || symbol?.width || 1)),
+    size: Math.max(3, Number(symbol?.size || 7))
+  }
+}
 
 const numberFormatter = new Intl.NumberFormat('es-CL')
 const decimalFormatter = new Intl.NumberFormat('es-CL', { maximumFractionDigits: 1 })
@@ -200,6 +235,7 @@ const buildSummaries = (selection: any, maxCategories: number, mapView?: JimuMap
         count: item.features.length,
         percent: total ? (item.features.length / total) * 100 : 0,
         color: COLORS[index % COLORS.length],
+        legendSymbol: legendSymbolOf(item.layer, item.features[0], COLORS[index % COLORS.length], geometryType),
         categoryField: category.field,
         categoryFieldAlias: category.alias,
         categories: category.categories,
