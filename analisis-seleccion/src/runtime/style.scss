@@ -206,6 +206,56 @@
     }
   }
 
+  &__relationship {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    padding: 4px 5px 4px 10px;
+    border: 1px solid #d9e4e7;
+    border-radius: 9px;
+    background: #f6f9fa;
+
+    > span {
+      color: #536a76;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    > div {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 3px;
+      padding: 2px;
+      border-radius: 7px;
+      background: #e6edef;
+    }
+
+    button {
+      min-width: 76px;
+      padding: 5px 9px;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      color: #5d707a;
+      font-size: 10px;
+      font-weight: 700;
+      cursor: pointer;
+
+      &.is-active {
+        background: #fff;
+        color: var(--sa-teal-dark);
+        box-shadow: 0 1px 4px rgba(24, 50, 70, .14);
+      }
+
+      &:disabled { cursor: not-allowed; opacity: .55; }
+      &:focus-visible { outline: 2px solid #55a9a2; outline-offset: 1px; }
+    }
+  }
+
   &__tools {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));

@@ -1,6 +1,6 @@
 import { React, AllWidgetProps } from 'jimu-core'
 import { JimuMapView, JimuMapViewComponent, loadArcGISJSAPIModules } from 'jimu-arcgis'
-import { IMConfig } from '../config'
+import { IMConfig, SpatialRelationship } from '../config'
 import {
   exportLayerCsv,
   exportSelectionExcel,
@@ -291,6 +291,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   const [activeTool, setActiveTool] = React.useState<DrawTool>(null)
   const [results, setResults] = React.useState<LayerSummary[]>([])
   const [disabledLayerKeys, setDisabledLayerKeys] = React.useState<string[]>([])
+  const [relationship, setRelationship] = React.useState<SpatialRelationship>(props.config.spatialRelationship || 'intersects')
   const [focusedLayerKey, setFocusedLayerKey] = React.useState('')
   const [areaSquareMeters, setAreaSquareMeters] = React.useState<number>(null)
   const [error, setError] = React.useState('')
@@ -305,6 +306,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   const graphicsLayerRef = React.useRef<any>(null)
   const jimuMapViewRef = React.useRef<JimuMapView>(null)
   const analysisTokenRef = React.useRef(0)
+  const lastAnalysisGraphicRef = React.useRef<any>(null)
   const mountedRef = React.useRef(true)
 
   const activeResults = React.useMemo(() => {
@@ -337,7 +339,6 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     return slices
   }, [activeResults, total])
   const focusedResult = activeResults.find(result => result.key === focusedLayerKey) || activeResults[0]
-  const relationship = props.config.spatialRelationship || 'intersects'
   const maxCategories = Math.max(3, Math.min(8, props.config.maxCategories || 5))
 
   const countVisibleLayers = React.useCallback((mapView: JimuMapView): number => {
@@ -370,6 +371,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     analysisTokenRef.current += 1
     try { jimuMapViewRef.current?.clearSelectedFeatures?.() } catch (_) {}
     if (removeDrawing) graphicsLayerRef.current?.removeAll?.()
+    if (removeDrawing) lastAnalysisGraphicRef.current = null
     setResults([])
     setDisabledLayerKeys([])
     setFocusedLayerKey('')
@@ -396,9 +398,11 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     }
   }, [])
 
-  const analyzeGraphic = React.useCallback(async (graphic: any) => {
+  const analyzeGraphic = React.useCallback(async (graphic: any, relationshipOverride?: SpatialRelationship) => {
     const mapView = jimuMapViewRef.current
     if (!mapView || !graphic) return
+    lastAnalysisGraphicRef.current = graphic
+    const selectedRelationship = relationshipOverride || relationship
     const token = ++analysisTokenRef.current
     setAnalysisState('querying')
     setError('')
@@ -410,7 +414,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       setLayerCount(countVisibleLayers(mapView))
       mapView.clearSelectedFeatures()
       const [selection, area] = await Promise.all([
-        mapView.selectFeaturesByGraphic(graphic, relationship),
+        mapView.selectFeaturesByGraphic(graphic, selectedRelationship),
         calculateArea(graphic.geometry)
       ])
       if (!mountedRef.current || token !== analysisTokenRef.current) return
@@ -552,6 +556,15 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     resetOutput(true)
   }
 
+  const changeRelationship = (value: SpatialRelationship) => {
+    if (value === relationship || analysisState === 'querying' || exporting) return
+    setRelationship(value)
+    const graphic = lastAnalysisGraphicRef.current
+    if (graphic && (analysisState === 'ready' || analysisState === 'empty')) {
+      void analyzeGraphicRef.current(graphic, value)
+    }
+  }
+
   const toggleResultLayer = (result: LayerSummary) => {
     if (exporting) return
     const isDisabled = disabledLayerKeys.indexOf(result.key) >= 0
@@ -675,6 +688,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     setExportMessage('')
     setExportError('')
     setAnalysisState('idle')
+    setRelationship(props.config.spatialRelationship || 'intersects')
     if (!jimuMapView) {
       setLayerCount(0)
       return
@@ -688,7 +702,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       try { currentMapView.clearSelectedFeatures() } catch (_) {}
       releaseSketch(currentMapView)
     }
-  }, [countVisibleLayers, jimuMapView, releaseSketch])
+  }, [countVisibleLayers, jimuMapView, props.config.spatialRelationship, releaseSketch])
 
   React.useEffect(() => () => {
     mountedRef.current = false
@@ -723,6 +737,13 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
         <div className="selection-analysis__section-heading">
           <div><span>PASO 1</span><strong>Dibuje el área de interés</strong></div>
           {(results.length > 0 || activeTool) && <button type="button" className="selection-analysis__clear-link" disabled={Boolean(exporting)} onClick={clearSelection}>{activeTool ? 'Cancelar' : 'Limpiar'}</button>}
+        </div>
+        <div className="selection-analysis__relationship" role="group" aria-label="Criterio de selección espacial">
+          <span>Criterio</span>
+          <div>
+            <button type="button" className={relationship === 'intersects' ? 'is-active' : ''} aria-pressed={relationship === 'intersects'} disabled={analysisState === 'querying' || Boolean(exporting)} onClick={() => changeRelationship('intersects')}>Interseca</button>
+            <button type="button" className={relationship === 'contains' ? 'is-active' : ''} aria-pressed={relationship === 'contains'} disabled={analysisState === 'querying' || Boolean(exporting)} onClick={() => changeRelationship('contains')}>Contenida</button>
+          </div>
         </div>
         <div className="selection-analysis__tools" role="toolbar" aria-label="Herramientas de selección">
           {([

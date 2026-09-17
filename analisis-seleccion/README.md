@@ -12,6 +12,8 @@ Versión 1.3.2: resuelve `JimuLayerView` en respuestas antiguas por matrices y r
 
 Versión 1.4.0: el PDF usa muestras de la simbología del renderer del mapa e incorpora el gráfico donut de distribución.
 
+Versión 1.5.0: incorpora un selector visible `Interseca / Contenida`, con `Interseca` activa de forma predeterminada y reanálisis inmediato de la geometría actual al cambiar el criterio.
+
 ## Funcionalidad
 
 - Selección espacial integrada con los Data Sources de Experience Builder.
