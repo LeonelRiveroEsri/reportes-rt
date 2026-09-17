@@ -6,6 +6,8 @@ Versión 1.2.1: compatibilidad con el resultado de selección agrupado por `Jimu
 
 Versión 1.3.0: permite apagar y encender capas seleccionadas; el mapa, los indicadores, gráficos y reportes consideran únicamente las capas activas.
 
+Versión 1.3.1: vincula cada resultado con su `JimuLayerView` para controlar la visibilidad y el resaltado de selección de la capa real del mapa.
+
 ## Funcionalidad
 
 - Selección espacial integrada con los Data Sources de Experience Builder.
