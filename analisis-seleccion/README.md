@@ -14,6 +14,8 @@ Versión 1.4.0: el PDF usa muestras de la simbología del renderer del mapa e in
 
 Versión 1.5.0: incorpora un selector visible `Interseca / Contenida`, con `Interseca` activa de forma predeterminada y reanálisis inmediato de la geometría actual al cambiar el criterio.
 
+Versión 1.5.1: simplifica a `Reporte` el subtítulo de la descarga PDF.
+
 ## Funcionalidad
 
 - Selección espacial integrada con los Data Sources de Experience Builder.
