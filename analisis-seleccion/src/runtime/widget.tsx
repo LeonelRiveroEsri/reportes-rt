@@ -21,6 +21,8 @@ interface CategoryItem {
 
 interface LayerSummary {
   key: string
+  jimuLayerViewId: string
+  layer: any
   title: string
   geometryType: string
   count: number
@@ -46,17 +48,25 @@ const COLORS = ['#0f766e', '#2563eb', '#f59e0b', '#8b5cf6', '#db2777', '#0891b2'
 const numberFormatter = new Intl.NumberFormat('es-CL')
 const decimalFormatter = new Intl.NumberFormat('es-CL', { maximumFractionDigits: 1 })
 
-const flattenSelection = (selection: any): any[][] => {
+interface SelectionGroup {
+  jimuLayerViewId: string
+  features: any[]
+}
+
+const flattenSelection = (selection: any): SelectionGroup[] => {
   if (!selection) return []
-  const groups = Array.isArray(selection)
-    ? selection
-    : typeof selection === 'object'
-      ? Object.keys(selection).map(key => selection[key])
-      : []
-  return groups
-    .filter(group => Array.isArray(group) && group.length > 0)
-    .map(group => group.filter(Boolean))
-    .filter(group => group.length > 0)
+  if (Array.isArray(selection)) {
+    return selection
+      .map((features, index) => ({ jimuLayerViewId: `legacy-${index}`, features: Array.isArray(features) ? features.filter(Boolean) : [] }))
+      .filter(group => group.features.length > 0)
+  }
+  if (typeof selection !== 'object') return []
+  return Object.keys(selection)
+    .map(jimuLayerViewId => ({
+      jimuLayerViewId,
+      features: Array.isArray(selection[jimuLayerViewId]) ? selection[jimuLayerViewId].filter(Boolean) : []
+    }))
+    .filter(group => group.features.length > 0)
 }
 
 const layerOf = (feature: any): any => feature?.layer || feature?.sourceLayer || feature?.sourceLayer?.layer
@@ -144,15 +154,16 @@ const chooseCategoryBreakdown = (features: any[], maxCategories: number): {
   }
 }
 
-const buildSummaries = (selection: any, maxCategories: number): LayerSummary[] => {
+const buildSummaries = (selection: any, maxCategories: number, mapView?: JimuMapView): LayerSummary[] => {
   const groups = flattenSelection(selection)
-  const byLayer = new Map<string, { layer: any, features: any[] }>()
-  groups.forEach((features, index) => {
-    const layer = layerOf(features[0])
-    const key = layerKey(layer, `layer-${index}`)
+  const byLayer = new Map<string, { jimuLayerViewId: string, layer: any, features: any[] }>()
+  groups.forEach((group, index) => {
+    const jimuLayerView = mapView?.jimuLayerViews?.[group.jimuLayerViewId] as any
+    const layer = jimuLayerView?.layer || layerOf(group.features[0])
+    const key = group.jimuLayerViewId || layerKey(layer, `layer-${index}`)
     const current = byLayer.get(key)
-    if (current) current.features.push(...features)
-    else byLayer.set(key, { layer, features: [...features] })
+    if (current) current.features.push(...group.features)
+    else byLayer.set(key, { jimuLayerViewId: group.jimuLayerViewId, layer, features: [...group.features] })
   })
   const total = Array.from(byLayer.values()).reduce((sum, item) => sum + item.features.length, 0)
   return Array.from(byLayer.entries())
@@ -163,6 +174,8 @@ const buildSummaries = (selection: any, maxCategories: number): LayerSummary[] =
       const geometryType = item.layer?.geometryType || item.features[0]?.geometry?.type || ''
       return {
         key: item.key,
+        jimuLayerViewId: item.jimuLayerViewId,
+        layer: item.layer,
         title: String(item.layer?.title || item.layer?.name || `Capa ${index + 1}`),
         geometryType,
         count: item.features.length,
@@ -346,7 +359,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
         calculateArea(graphic.geometry)
       ])
       if (!mountedRef.current || token !== analysisTokenRef.current) return
-      const summaries = buildSummaries(selection, maxCategories)
+      const summaries = buildSummaries(selection, maxCategories, mapView)
       setAreaSquareMeters(area)
       setResults(summaries)
       setDisabledLayerKeys([])
@@ -487,8 +500,23 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   const toggleResultLayer = (result: LayerSummary) => {
     if (exporting) return
     const isDisabled = disabledLayerKeys.indexOf(result.key) >= 0
-    const layer = layerOf(result.features[0])
-    if (layer && 'visible' in layer) layer.visible = isDisabled
+    const jimuLayerView = jimuMapViewRef.current?.jimuLayerViews?.[result.jimuLayerViewId] as any
+    const visible = isDisabled
+    const layers = [result.layer, jimuLayerView?.layer, layerOf(result.features[0])]
+    layers.forEach(layer => {
+      if (layer && 'visible' in layer) layer.visible = visible
+    })
+    if (jimuLayerView?.view && 'visible' in jimuLayerView.view) jimuLayerView.view.visible = visible
+    const dataSource = jimuLayerView?.getLayerDataSource?.()
+    if (!visible) {
+      dataSource?.clearSelection?.()
+    } else {
+      const objectIdField = String(result.layer?.objectIdField || jimuLayerView?.layer?.objectIdField || '')
+      const ids = objectIdField
+        ? result.features.map(feature => feature?.attributes?.[objectIdField]).filter(value => value !== null && value !== undefined).map(String)
+        : []
+      if (ids.length) jimuLayerView?.selectFeaturesByIds?.(ids)
+    }
     setDisabledLayerKeys(current => isDisabled
       ? current.filter(key => key !== result.key)
       : [...current, result.key])
