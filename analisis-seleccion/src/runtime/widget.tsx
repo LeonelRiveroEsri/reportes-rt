@@ -75,6 +75,24 @@ const layerKey = (layer: any, fallback: string): string => String(
   layer?.uid || layer?.url || layer?.portalItem?.id || layer?.id || fallback
 )
 
+const resolveJimuLayerView = (mapView: JimuMapView, requestedId: string, feature: any): any => {
+  const views = mapView?.jimuLayerViews || {}
+  if (requestedId && views[requestedId]) return views[requestedId]
+  const featureLayers = [feature?.layer, feature?.sourceLayer, feature?.sourceLayer?.layer].filter(Boolean)
+  const matchesLayer = (candidate: any): boolean => featureLayers.some(layer => {
+    if (candidate === layer) return true
+    const candidateUrl = String(candidate?.url || '')
+    const layerUrl = String(layer?.url || '')
+    if (candidateUrl && layerUrl && candidateUrl === layerUrl) return true
+    const candidateId = String(candidate?.id || candidate?.layerId || '')
+    const featureId = String(layer?.id || layer?.layerId || '')
+    return Boolean(candidateId && featureId && candidateId === featureId && String(candidate?.title || '') === String(layer?.title || ''))
+  })
+  return Object.keys(views)
+    .map(id => views[id] as any)
+    .find(jimuLayerView => matchesLayer(jimuLayerView?.layer) || matchesLayer(jimuLayerView?.view?.layer))
+}
+
 const humanizeGeometry = (geometryType: string): string => {
   const labels: Record<string, string> = {
     point: 'Puntos',
@@ -158,12 +176,13 @@ const buildSummaries = (selection: any, maxCategories: number, mapView?: JimuMap
   const groups = flattenSelection(selection)
   const byLayer = new Map<string, { jimuLayerViewId: string, layer: any, features: any[] }>()
   groups.forEach((group, index) => {
-    const jimuLayerView = mapView?.jimuLayerViews?.[group.jimuLayerViewId] as any
+    const jimuLayerView = resolveJimuLayerView(mapView, group.jimuLayerViewId, group.features[0])
     const layer = jimuLayerView?.layer || layerOf(group.features[0])
-    const key = group.jimuLayerViewId || layerKey(layer, `layer-${index}`)
+    const resolvedJimuLayerViewId = jimuLayerView?.id || group.jimuLayerViewId
+    const key = resolvedJimuLayerViewId || layerKey(layer, `layer-${index}`)
     const current = byLayer.get(key)
     if (current) current.features.push(...group.features)
-    else byLayer.set(key, { jimuLayerViewId: group.jimuLayerViewId, layer, features: [...group.features] })
+    else byLayer.set(key, { jimuLayerViewId: resolvedJimuLayerViewId, layer, features: [...group.features] })
   })
   const total = Array.from(byLayer.values()).reduce((sum, item) => sum + item.features.length, 0)
   return Array.from(byLayer.entries())
@@ -500,26 +519,33 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   const toggleResultLayer = (result: LayerSummary) => {
     if (exporting) return
     const isDisabled = disabledLayerKeys.indexOf(result.key) >= 0
-    const jimuLayerView = jimuMapViewRef.current?.jimuLayerViews?.[result.jimuLayerViewId] as any
-    const visible = isDisabled
-    const layers = [result.layer, jimuLayerView?.layer, layerOf(result.features[0])]
-    layers.forEach(layer => {
-      if (layer && 'visible' in layer) layer.visible = visible
-    })
-    if (jimuLayerView?.view && 'visible' in jimuLayerView.view) jimuLayerView.view.visible = visible
-    const dataSource = jimuLayerView?.getLayerDataSource?.()
-    if (!visible) {
-      dataSource?.clearSelection?.()
-    } else {
-      const objectIdField = String(result.layer?.objectIdField || jimuLayerView?.layer?.objectIdField || '')
-      const ids = objectIdField
-        ? result.features.map(feature => feature?.attributes?.[objectIdField]).filter(value => value !== null && value !== undefined).map(String)
-        : []
+    const nextDisabledKeys = isDisabled
+      ? disabledLayerKeys.filter(key => key !== result.key)
+      : [...disabledLayerKeys, result.key]
+    const mapView = jimuMapViewRef.current
+    try { mapView?.clearSelectedFeatures?.() } catch (_) {}
+    results.forEach(item => {
+      const visible = nextDisabledKeys.indexOf(item.key) < 0
+      const jimuLayerView = resolveJimuLayerView(mapView, item.jimuLayerViewId, item.features[0])
+      const layers = [item.layer, jimuLayerView?.layer, jimuLayerView?.view?.layer, layerOf(item.features[0])]
+      layers.forEach(layer => {
+        if (layer && 'visible' in layer) layer.visible = visible
+      })
+      if (jimuLayerView?.view && 'visible' in jimuLayerView.view) jimuLayerView.view.visible = visible
+      const dataSource = jimuLayerView?.getLayerDataSource?.()
+      if (!visible) {
+        dataSource?.clearSelection?.()
+        return
+      }
+      const featureLayer = layerOf(item.features[0])
+      const objectIdField = String(item.layer?.objectIdField || jimuLayerView?.layer?.objectIdField || featureLayer?.objectIdField || '')
+      const ids = item.features
+        .map(feature => feature?.getObjectId?.() ?? (objectIdField ? feature?.attributes?.[objectIdField] : null))
+        .filter(value => value !== null && value !== undefined)
+        .map(String)
       if (ids.length) jimuLayerView?.selectFeaturesByIds?.(ids)
-    }
-    setDisabledLayerKeys(current => isDisabled
-      ? current.filter(key => key !== result.key)
-      : [...current, result.key])
+    })
+    setDisabledLayerKeys(nextDisabledKeys)
     setExportMessage('')
     setExportError('')
     if (!isDisabled && focusedLayerKey === result.key) {
