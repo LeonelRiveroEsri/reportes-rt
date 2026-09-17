@@ -834,7 +834,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
             </button>
             <button type="button" className="is-pdf" disabled={Boolean(exporting) || activeResults.length === 0} onClick={() => { void handleExportPdf() }}>
               <span className="selection-analysis__export-icon">{exporting === 'pdf' ? <i className="selection-analysis__spinner"></i> : <SvgIcon><path d="M6 3h9l4 4v14H6z" /><path d="M15 3v5h4M9 13h6M9 17h4" /></SvgIcon>}</span>
-              <span><strong>PDF</strong><small>Reporte profesional</small></span>
+              <span><strong>PDF</strong><small>Reporte</small></span>
             </button>
           </div>
           <p className="selection-analysis__export-context">CSV exportará <strong>{focusedResult?.title}</strong>. Excel y PDF incluyen solo las capas activas.</p>
