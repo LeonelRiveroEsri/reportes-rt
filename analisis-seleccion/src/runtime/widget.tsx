@@ -47,8 +47,13 @@ const numberFormatter = new Intl.NumberFormat('es-CL')
 const decimalFormatter = new Intl.NumberFormat('es-CL', { maximumFractionDigits: 1 })
 
 const flattenSelection = (selection: any): any[][] => {
-  if (!Array.isArray(selection)) return []
-  return selection
+  if (!selection) return []
+  const groups = Array.isArray(selection)
+    ? selection
+    : typeof selection === 'object'
+      ? Object.keys(selection).map(key => selection[key])
+      : []
+  return groups
     .filter(group => Array.isArray(group) && group.length > 0)
     .map(group => group.filter(Boolean))
     .filter(group => group.length > 0)
@@ -754,7 +759,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
             <div><span>DETALLE</span><strong>Capas seleccionadas</strong></div>
           </div>
           {results.map((result, index) => <button type="button" key={result.key} className={focusedResult?.key === result.key ? 'is-active' : ''} aria-pressed={focusedResult?.key === result.key} aria-controls={`${props.id}-layer-detail`} onClick={() => setFocusedLayerKey(result.key)}>
-            <span className="selection-analysis__layer-order" style={{ borderColor: result.color, color: result.color }}>{String(index + 1).padStart(2, '0')}</span>
+            <span className="selection-analysis__layer-order" style={{ borderColor: result.color, color: result.color }}>{index + 1 < 10 ? `0${index + 1}` : index + 1}</span>
             <span className="selection-analysis__layer-name"><strong title={result.title}>{result.title}</strong><small>{humanizeGeometry(result.geometryType)} · {decimalFormatter.format(result.percent)}% de la selección</small></span>
             <span className="selection-analysis__layer-count"><strong>{numberFormatter.format(result.count)}</strong><small>registros</small></span>
             <span className="selection-analysis__chevron">›</span>
