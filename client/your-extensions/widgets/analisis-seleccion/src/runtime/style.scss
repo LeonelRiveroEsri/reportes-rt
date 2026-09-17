@@ -1042,31 +1042,80 @@
       padding: 0 13px;
     }
 
-    > button {
+    > .selection-analysis__layer-row {
       display: grid;
-      grid-template-columns: 29px minmax(0, 1fr) auto 10px;
-      gap: 9px;
+      grid-template-columns: minmax(0, 1fr) 44px;
       align-items: center;
       width: 100%;
       min-width: 0;
-      padding: 10px 12px;
       border: 0;
       border-top: 1px solid #edf1f2;
       background: #fff;
-      color: inherit;
-      text-align: left;
-      cursor: pointer;
       transition: background .15s ease;
 
       &:hover, &.is-active {
         background: #f0f8f7;
       }
 
-      &.is-active .selection-analysis__chevron {
-        color: var(--sa-teal);
-        transform: translateX(2px);
+      &.is-disabled {
+        background: #f7f9fa;
+
+        .selection-analysis__layer-main { opacity: .52; }
+        .selection-analysis__layer-name strong { text-decoration: line-through; }
       }
     }
+  }
+
+  &__layer-main {
+    display: grid;
+    grid-template-columns: 29px minmax(0, 1fr) auto;
+    gap: 9px;
+    align-items: center;
+    min-width: 0;
+    padding: 10px 5px 10px 12px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+
+    &:disabled { cursor: default; }
+  }
+
+  &__layer-toggle {
+    display: grid;
+    align-self: stretch;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    place-items: center;
+
+    > span {
+      position: relative;
+      width: 30px;
+      height: 17px;
+      border-radius: 999px;
+      background: var(--sa-teal);
+      box-shadow: inset 0 0 0 1px rgba(15, 118, 110, .22);
+      transition: background .15s ease;
+    }
+
+    i {
+      position: absolute;
+      top: 3px;
+      right: 3px;
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(24, 50, 70, .28);
+      transition: transform .15s ease;
+    }
+
+    &[aria-checked='false'] > span { background: #aab6bc; }
+    &[aria-checked='false'] i { transform: translateX(-13px); }
+    &:focus-visible { outline: 2px solid #55a9a2; outline-offset: -3px; }
   }
 
   &__layer-order {
