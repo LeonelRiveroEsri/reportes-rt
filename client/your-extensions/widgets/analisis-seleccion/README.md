@@ -8,6 +8,8 @@ Versión 1.3.0: permite apagar y encender capas seleccionadas; el mapa, los indi
 
 Versión 1.3.1: vincula cada resultado con su `JimuLayerView` para controlar la visibilidad y el resaltado de selección de la capa real del mapa.
 
+Versión 1.3.2: resuelve `JimuLayerView` en respuestas antiguas por matrices y reconstruye el resaltado global usando únicamente las capas activas.
+
 ## Funcionalidad
 
 - Selección espacial integrada con los Data Sources de Experience Builder.
