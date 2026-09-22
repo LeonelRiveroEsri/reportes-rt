@@ -1,0 +1,757 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Resumen técnico y funcional de la modernización del flujo de Ingreso SIA a Experience Builder Developer.">
+  <title>Ingreso SIA · Modernización 100 % Experience Builder Developer</title>
+  <style>
+    :root {
+      --ink: #173642;
+      --ink-soft: #4f6872;
+      --teal: #087f86;
+      --teal-2: #00a39f;
+      --teal-pale: #e8f6f5;
+      --orange: #db6d28;
+      --orange-pale: #fff1e7;
+      --red: #b83a3a;
+      --red-pale: #fff0f0;
+      --green: #277a59;
+      --green-pale: #eaf7f0;
+      --line: #d7e1e5;
+      --panel: #ffffff;
+      --page: #edf2f4;
+      --shadow: 0 14px 40px rgba(23, 54, 66, .10);
+      --radius: 18px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      overflow-x: hidden;
+      color: var(--ink);
+      background: var(--page);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+    a { color: var(--teal); }
+    code, .mono {
+      font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+      font-size: .92em;
+    }
+    .shell { width: min(1240px, calc(100% - 40px)); margin: 0 auto; }
+    .topbar {
+      position: sticky;
+      z-index: 10;
+      top: 0;
+      border-bottom: 1px solid rgba(215, 225, 229, .95);
+      background: rgba(255, 255, 255, .92);
+      backdrop-filter: blur(14px);
+    }
+    .topbar .shell {
+      display: flex;
+      min-height: 60px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .brand { display: flex; align-items: center; gap: 11px; font-weight: 800; }
+    .brand-mark {
+      display: grid;
+      width: 32px;
+      height: 32px;
+      place-items: center;
+      border-radius: 9px;
+      color: #fff;
+      background: linear-gradient(145deg, var(--orange), #f18c3c);
+      font-size: 13px;
+      letter-spacing: .05em;
+    }
+    nav { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; font-weight: 700; }
+    nav a { color: var(--ink-soft); text-decoration: none; }
+    nav a:hover { color: var(--teal); }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: 72px 0 56px;
+      color: #fff;
+      background:
+        radial-gradient(circle at 85% 15%, rgba(0, 200, 184, .23), transparent 26%),
+        linear-gradient(130deg, #163b49 0%, #075f68 62%, #087f86 100%);
+    }
+    .hero::after {
+      position: absolute;
+      right: -120px;
+      bottom: -180px;
+      width: 480px;
+      height: 480px;
+      border: 70px solid rgba(255,255,255,.05);
+      border-radius: 50%;
+      content: "";
+    }
+    .eyebrow {
+      display: inline-flex;
+      padding: 7px 11px;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid rgba(255,255,255,.24);
+      border-radius: 999px;
+      background: rgba(255,255,255,.08);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .eyebrow i { width: 8px; height: 8px; border-radius: 50%; background: #61e0b3; }
+    h1 {
+      max-width: 930px;
+      margin: 22px 0 15px;
+      font-size: clamp(36px, 5vw, 64px);
+      line-height: 1.04;
+      letter-spacing: -.045em;
+    }
+    .hero p { max-width: 810px; margin: 0; color: #d8eef0; font-size: 18px; }
+    .hero-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+    .hero-meta span {
+      padding: 8px 12px;
+      border-radius: 9px;
+      color: #e8f7f7;
+      background: rgba(255,255,255,.10);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    main { padding: 40px 0 72px; }
+    section { scroll-margin-top: 82px; }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: -68px;
+      position: relative;
+      z-index: 2;
+    }
+    .metric {
+      min-height: 140px;
+      padding: 22px;
+      border: 1px solid rgba(215, 225, 229, .9);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    .metric strong { display: block; color: var(--teal); font-size: 32px; line-height: 1; }
+    .metric span { display: block; margin-top: 11px; font-weight: 800; }
+    .metric small { display: block; margin-top: 4px; color: var(--ink-soft); }
+
+    .section { margin-top: 34px; padding: 34px; border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow); }
+    .section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 25px; }
+    .kicker { color: var(--orange); font-size: 12px; font-weight: 850; letter-spacing: .11em; text-transform: uppercase; }
+    h2 { margin: 4px 0 0; font-size: clamp(25px, 3vw, 36px); line-height: 1.15; letter-spacing: -.025em; }
+    h3 { margin: 0; font-size: 19px; line-height: 1.25; }
+    .section-head p { max-width: 570px; margin: 6px 0 0; color: var(--ink-soft); }
+    .status-pill {
+      flex: 0 0 auto;
+      padding: 8px 12px;
+      border: 1px solid #a9dbc3;
+      border-radius: 999px;
+      color: var(--green);
+      background: var(--green-pale);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .callout {
+      padding: 19px 21px;
+      border-left: 4px solid var(--teal);
+      border-radius: 0 12px 12px 0;
+      background: var(--teal-pale);
+    }
+    .callout strong { color: var(--teal); }
+
+    .problem-layout {
+      display: grid;
+      grid-template-columns: minmax(300px, .88fr) minmax(0, 1.45fr);
+      gap: 18px;
+      align-items: stretch;
+    }
+    .legacy-panel {
+      padding: 22px;
+      border: 1px solid #edc2c2;
+      border-radius: 15px;
+      background: linear-gradient(180deg, #fff7f7, #fff);
+    }
+    .legacy-panel > p { margin: 7px 0 17px; color: var(--ink-soft); font-size: 13px; }
+    .legacy-chain { display: grid; gap: 8px; }
+    .legacy-node {
+      padding: 12px 13px;
+      border: 1px solid #e5caca;
+      border-radius: 9px;
+      background: #fff;
+      font-size: 12px;
+    }
+    .legacy-node strong { display: block; color: var(--red); font-size: 13px; }
+    .legacy-node span { display: block; margin-top: 2px; color: var(--ink-soft); }
+    .legacy-down { color: var(--red); font-size: 18px; font-weight: 900; line-height: 1; text-align: center; }
+    .ambiguity {
+      margin-top: 17px;
+      padding: 14px;
+      border: 1px dashed #d99c9c;
+      border-radius: 10px;
+      background: var(--red-pale);
+    }
+    .ambiguity strong { display: block; color: var(--red); font-size: 12px; }
+    .ambiguity-flow { display: grid; grid-template-columns: 1fr auto 1.15fr auto 1fr; align-items: center; gap: 6px; margin-top: 10px; }
+    .ambiguity-flow span { padding: 7px; border-radius: 6px; background: #fff; font-size: 9px; font-weight: 800; text-align: center; }
+    .ambiguity-flow b { color: var(--red); }
+    .problem-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .problem-card { position: relative; min-height: 154px; padding: 19px 17px 16px 52px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+    .problem-card::before {
+      position: absolute;
+      top: 18px;
+      left: 16px;
+      display: grid;
+      width: 25px;
+      height: 25px;
+      place-items: center;
+      border-radius: 7px;
+      color: #fff;
+      background: var(--red);
+      content: attr(data-number);
+      font-size: 10px;
+      font-weight: 900;
+    }
+    .problem-card h3 { font-size: 14px; }
+    .problem-card p { margin: 6px 0 0; color: var(--ink-soft); font-size: 12px; }
+    .problem-card em { display: block; margin-top: 8px; color: var(--teal); font-size: 10px; font-style: normal; font-weight: 850; letter-spacing: .04em; text-transform: uppercase; }
+
+    .compare {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 64px minmax(0, 1fr);
+      align-items: stretch;
+      gap: 18px;
+    }
+    .compare-card { padding: 24px; border: 1px solid var(--line); border-radius: 15px; }
+    .compare-card.before { border-color: #edc2c2; background: var(--red-pale); }
+    .compare-card.after { border-color: #b5dedb; background: var(--teal-pale); }
+    .compare-label { display: inline-flex; margin-bottom: 15px; padding: 5px 9px; border-radius: 7px; font-size: 11px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+    .before .compare-label { color: var(--red); background: #fff; }
+    .after .compare-label { color: var(--teal); background: #fff; }
+    .compare-card ul { margin: 15px 0 0; padding-left: 20px; }
+    .compare-card li + li { margin-top: 9px; }
+    .compare-arrow { display: grid; place-items: center; color: var(--orange); font-size: 34px; font-weight: 900; }
+
+    .mini-flow { display: grid; gap: 8px; margin-top: 18px; }
+    .mini-node { padding: 10px 12px; border: 1px solid rgba(23,54,66,.12); border-radius: 8px; background: rgba(255,255,255,.78); font-size: 12px; font-weight: 750; }
+    .mini-arrow { color: var(--ink-soft); text-align: center; line-height: 1; }
+
+    .stepper {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      counter-reset: flow;
+    }
+    .stepper li {
+      position: relative;
+      min-height: 184px;
+      padding: 54px 18px 18px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: linear-gradient(180deg, #fff, #f8fbfc);
+      counter-increment: flow;
+    }
+    .stepper li::before {
+      position: absolute;
+      top: 15px;
+      left: 17px;
+      display: grid;
+      width: 29px;
+      height: 29px;
+      place-items: center;
+      border-radius: 50%;
+      color: #fff;
+      background: var(--teal);
+      content: counter(flow);
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .stepper li::after {
+      position: absolute;
+      top: 29px;
+      left: 55px;
+      width: calc(100% - 55px);
+      height: 2px;
+      background: linear-gradient(90deg, var(--teal-2), transparent);
+      content: "";
+    }
+    .stepper h3 { font-size: 15px; }
+    .stepper p { margin: 7px 0 0; color: var(--ink-soft); font-size: 13px; }
+    .stepper code { display: inline-block; margin-top: 7px; padding: 3px 6px; border-radius: 5px; color: var(--teal); background: var(--teal-pale); }
+
+    .architecture {
+      display: grid;
+      grid-template-columns: 1fr 40px 1.2fr 40px 1fr;
+      align-items: stretch;
+      gap: 11px;
+    }
+    .arch-column { display: grid; align-content: center; gap: 11px; }
+    .arch-box { padding: 17px; border: 1px solid var(--line); border-radius: 12px; background: #f8fbfc; }
+    .arch-box strong { display: block; }
+    .arch-box small { display: block; margin-top: 4px; color: var(--ink-soft); }
+    .arch-box.primary { border-color: #91cbc7; color: #fff; background: linear-gradient(145deg, var(--teal), #05636a); }
+    .arch-box.primary small { color: #d9f0f0; }
+    .arch-arrow { display: grid; place-items: center; color: var(--orange); font-size: 27px; font-weight: 900; }
+    .arch-caption { margin: 18px 0 0; color: var(--ink-soft); font-size: 13px; text-align: center; }
+
+    .services { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+    .service-card { overflow: hidden; border: 1px solid var(--line); border-radius: 15px; }
+    .service-title { padding: 19px 21px; color: #fff; background: var(--ink); }
+    .service-title span { display: block; color: #a8d9dc; font-size: 11px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+    .service-title h3 { margin-top: 4px; }
+    .service-body { padding: 20px; }
+    .url-box { position: relative; margin-bottom: 18px; padding: 13px 76px 13px 13px; overflow-wrap: anywhere; border: 1px solid var(--line); border-radius: 9px; background: #f5f8fa; font-size: 11px; }
+    .copy-button { position: absolute; top: 8px; right: 8px; padding: 6px 9px; border: 1px solid #a9c4ca; border-radius: 6px; color: var(--teal); background: #fff; cursor: pointer; font-size: 10px; font-weight: 800; }
+    .copy-button:hover { color: #fff; background: var(--teal); }
+    .contract { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .contract th, .contract td { padding: 9px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    .contract th { color: var(--ink-soft); font-size: 10px; letter-spacing: .07em; text-transform: uppercase; }
+    .direction { display: inline-block; padding: 3px 6px; border-radius: 5px; font-size: 9px; font-weight: 850; text-transform: uppercase; }
+    .direction.in { color: #8b5814; background: #fff1d9; }
+    .direction.out { color: var(--green); background: var(--green-pale); }
+    .service-note { margin: 16px 0 0; padding: 12px; border-radius: 8px; color: var(--ink-soft); background: var(--teal-pale); font-size: 12px; }
+
+    .pipeline { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-top: 20px; }
+    .pipeline div { padding: 13px 9px; border-top: 4px solid var(--teal); border-radius: 8px; background: #f4f8f9; font-size: 11px; text-align: center; }
+    .pipeline b { display: block; margin-bottom: 5px; color: var(--orange); font-size: 14px; }
+
+    .concurrency-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: #fbfdfd; }
+    .concurrency { display: block; min-width: 900px; width: 100%; height: auto; }
+    .legend-row { display: flex; flex-wrap: wrap; gap: 17px; margin-top: 14px; color: var(--ink-soft); font-size: 12px; }
+    .legend-row span { display: inline-flex; align-items: center; gap: 7px; }
+    .legend-row i { width: 13px; height: 13px; border-radius: 4px; }
+
+    .matrix-wrap { overflow-x: auto; }
+    .matrix { width: 100%; min-width: 820px; border-collapse: collapse; }
+    .matrix th, .matrix td { padding: 14px 13px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    .matrix th { color: var(--ink-soft); background: #f4f8f9; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; }
+    .matrix td { font-size: 13px; }
+    .matrix td:first-child { color: var(--red); font-weight: 800; }
+    .matrix td:last-child { color: var(--green); font-weight: 700; }
+
+    .checks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 13px; }
+    .check { display: flex; padding: 15px; align-items: flex-start; gap: 11px; border: 1px solid #b9dec9; border-radius: 11px; background: var(--green-pale); }
+    .check i { display: grid; flex: 0 0 auto; width: 23px; height: 23px; place-items: center; border-radius: 50%; color: #fff; background: var(--green); font-style: normal; font-size: 12px; font-weight: 900; }
+    .check strong { display: block; font-size: 13px; }
+    .check small { display: block; margin-top: 2px; color: var(--ink-soft); }
+
+    .rules { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .rule { padding: 17px; border: 1px solid var(--line); border-radius: 11px; }
+    .rule strong { display: block; color: var(--teal); }
+    .rule p { margin: 6px 0 0; color: var(--ink-soft); font-size: 13px; }
+
+    .footer { padding: 27px 0 38px; color: #6b8088; font-size: 12px; text-align: center; }
+    .print-only { display: none; }
+
+    @media (max-width: 980px) {
+      .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .compare { grid-template-columns: 1fr; }
+      .compare-arrow { transform: rotate(90deg); }
+      .stepper { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .architecture { grid-template-columns: 1fr; }
+      .arch-arrow { transform: rotate(90deg); }
+      .services { grid-template-columns: 1fr; }
+      .pipeline { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .checks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .problem-layout { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 640px) {
+      .shell { width: min(calc(100% - 24px), 1240px); }
+      nav { display: none; }
+      .hero { padding: 52px 0 88px; }
+      h1 { font-size: 32px; overflow-wrap: anywhere; }
+      .hero p { font-size: 16px; }
+      .summary-grid { grid-template-columns: 1fr; }
+      .section { padding: 23px 18px; }
+      .section-head { flex-direction: column; }
+      .stepper, .checks, .rules { grid-template-columns: 1fr; }
+      .problem-grid { grid-template-columns: 1fr; }
+      .pipeline { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media print {
+      body { background: #fff; font-size: 10pt; }
+      .topbar, .copy-button { display: none !important; }
+      .hero { padding: 28px 0; color: var(--ink); background: #fff; border-bottom: 3px solid var(--teal); }
+      .hero p, .hero-meta span { color: var(--ink-soft); }
+      .hero-meta span { border: 1px solid var(--line); background: #fff; }
+      .summary-grid { margin-top: 18px; }
+      .metric, .section { box-shadow: none; break-inside: avoid; }
+      .section { padding: 22px; border: 1px solid var(--line); }
+      .print-only { display: block; }
+      a { color: var(--ink); text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="shell">
+      <div class="brand"><span class="brand-mark">SIA</span><span>Modernización del Ingreso</span></div>
+      <nav aria-label="Contenido principal">
+        <a href="#problemas">Problemas de origen</a>
+        <a href="#cambio">Corrección</a>
+        <a href="#flujo">Flujo</a>
+        <a href="#servicios">GP Tools</a>
+        <a href="#formatos">KML/KMZ</a>
+        <a href="#concurrencia">Concurrencia</a>
+        <a href="#validacion">Validación</a>
+      </nav>
+    </div>
+  </header>
+
+  <header class="hero">
+    <div class="shell">
+      <span class="eyebrow"><i></i> Documento de arquitectura y mejoras</span>
+      <h1>Ingreso SIA 100 % Experience Builder Developer</h1>
+      <p>Revisión funcional y técnica motivada por una arquitectura dependiente de Dashboard, cajas/listas, JavaScript y un Web AppBuilder próximo a salir de operación. La nueva versión concentra el control en un widget React con trazabilidad por GlobalID y carga robusta de archivos KML o KMZ.</p>
+      <div class="hero-meta">
+        <span>Widget 1.10.0</span>
+        <span>GP Tools V2</span>
+        <span>Actualizado: 22 septiembre 2026</span>
+        <span>Estado: publicado y validado</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="shell">
+    <div class="summary-grid" aria-label="Resumen ejecutivo">
+      <article class="metric"><strong>2</strong><span>GP Tools especializadas</span><small>Carga temporal y procesamiento final.</small></article>
+      <article class="metric"><strong>1:1</strong><span>Registro inequívoco</span><small>GlobalID como clave de toda la sesión.</small></article>
+      <article class="metric"><strong>2</strong><span>Tokens con propósito</span><small>Survey123 y visualización cartográfica.</small></article>
+      <article class="metric"><strong>100 %</strong><span>Experience Builder Dev</span><small>Mapa, formulario y seguimiento en React.</small></article>
+    </div>
+
+    <section class="section" id="problemas">
+      <div class="section-head">
+        <div><span class="kicker">Razones que originaron el cambio</span><h2>La solución anterior dependía de supuestos que dejaron de ser confiables</h2><p>El diseño funcionaba mientras existiera una sola carga por correo y cada componente respondiera en el orden esperado. Esa condición no era segura frente a cargas simultáneas, reintentos o más de un elemento en el Dashboard.</p></div>
+        <span class="status-pill" style="color:#b83a3a;border-color:#edc2c2;background:#fff0f0">Arquitectura reemplazada</span>
+      </div>
+      <div class="problem-layout">
+        <article class="legacy-panel">
+          <h3>Cadena técnica anterior</h3>
+          <p>La navegación y la selección del registro estaban repartidas entre aplicaciones distintas.</p>
+          <div class="legacy-chain" aria-label="Cadena técnica de la solución anterior">
+            <div class="legacy-node"><strong>1. Dashboard</strong><span>Cajas/listas filtradas mediante parámetros, principalmente el correo.</span></div>
+            <div class="legacy-down">↓</div>
+            <div class="legacy-node"><strong>2. Web AppBuilder embebido</strong><span>URL construida con token y extensión para hacer zoom al polígono.</span></div>
+            <div class="legacy-down">↓</div>
+            <div class="legacy-node"><strong>3. Survey123 en otra integración</strong><span>El formulario no entregaba al Dashboard un evento controlado de término.</span></div>
+            <div class="legacy-down">↓</div>
+            <div class="legacy-node"><strong>4. GP de ingreso por deducción</strong><span>Buscaba qué registro parecía ser el más reciente, sin recibir su identificador exacto.</span></div>
+          </div>
+          <div class="ambiguity">
+            <strong>Conflicto de cardinalidad por correo</strong>
+            <div class="ambiguity-flow">
+              <span>Carga A<br>mismo correo</span><b>+</b><span>Parámetro del Dashboard<br>devuelve 2 elementos</span><b>→</b><span>¿Cuál caja o registro<br>se debe abrir?</span>
+            </div>
+          </div>
+        </article>
+
+        <div class="problem-grid">
+          <article class="problem-card" data-number="01"><h3>Dependencia de Web AppBuilder</h3><p>El mapa se abría dentro del Dashboard mediante una aplicación Web AppBuilder, pasando token y extensión por URL. Esa aplicación está prevista para salir de operación y dejó de ser una base confiable para evolucionar el proceso.</p><em>Corrección: mapa nativo dentro del widget Experience Builder</em></article>
+          <article class="problem-card" data-number="02"><h3>Solo una carga utilizable por correo</h3><p>El correo actuaba como selector. Si el mismo correo tenía dos cargas, el filtro o parámetro del Dashboard listaba más de una caja/elemento y no podía identificar inequívocamente cuál correspondía.</p><em>Corrección: selección exclusiva por GlobalID</em></article>
+          <article class="problem-card" data-number="03"><h3>La carga nueva reemplazaba contexto anterior</h3><p>Para sostener el supuesto “un correo = un registro”, la herramienta de carga eliminaba temporales anteriores del mismo correo. Esto impedía reintentos y sesiones paralelas válidas.</p><em>Corrección: cargas independientes aunque el correo se repita</em></article>
+          <article class="problem-card" data-number="04"><h3>Ingreso elegido por deducción</h3><p>La GP final no recibía el ObjectID o GlobalID seleccionado. Intentaba deducir qué registro acababa de entrar, con riesgo de procesar otro si dos usuarios trabajaban al mismo tiempo.</p><em>Corrección: parámetro registro_id obligatorio</em></article>
+          <article class="problem-card" data-number="05"><h3>Ejecución de GP fuera de la experiencia</h3><p>El usuario no tenía dentro de la aplicación una vista completa del job, sus etapas, mensajes o errores. Era difícil saber si el formulario se guardó y si el ingreso seguía ejecutándose.</p><em>Corrección: seguimiento del job y siete etapas visibles</em></article>
+          <article class="problem-card" data-number="06"><h3>Limpieza temporal no garantizada</h3><p>El flujo podía copiar información a la capa productiva sin retirar de forma controlada el registro de ingreso, dejando residuos y aumentando la ambigüedad de futuras búsquedas.</p><em>Corrección: verificar producción y eliminar exactamente el temporal procesado</em></article>
+          <article class="problem-card" data-number="07"><h3>Lectura frágil de archivos KML</h3><p>La carga dependía de una estructura XML y un namespace específicos. Algunos exportadores guardan el polígono dentro de Folder o MultiGeometry, omiten declaraciones XML o entregan un KMZ, provocando fallas aunque las coordenadas fueran válidas.</p><em>Corrección: parser independiente del namespace y soporte integral KML/KMZ</em></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="objetivo">
+      <div class="section-head">
+        <div><span class="kicker">Objetivo alcanzado</span><h2>Controlar el ciclo completo de cada solicitud</h2></div>
+        <span class="status-pill">✓ Implementado</span>
+      </div>
+      <div class="callout">
+        <strong>Resultado:</strong> desde la carga del KML o KMZ hasta el traspaso a producción, el widget conserva un identificador único. El correo queda como dato de contacto y deja de utilizarse para decidir qué registro mostrar, editar, procesar o eliminar.
+      </div>
+    </section>
+
+    <section class="section" id="cambio">
+      <div class="section-head">
+        <div><span class="kicker">Evolución de arquitectura</span><h2>Del comportamiento inferido al procesamiento explícito</h2></div>
+      </div>
+      <div class="compare">
+        <article class="compare-card before">
+          <span class="compare-label">Versión anterior</span>
+          <h3>Integración distribuida y sin una clave controlada de extremo a extremo</h3>
+          <div class="mini-flow" aria-label="Flujo anterior">
+            <div class="mini-node">Dashboard + caja HTML/JavaScript</div><div class="mini-arrow">↓</div>
+            <div class="mini-node">GP de carga + enlace a Web AppBuilder</div><div class="mini-arrow">↓</div>
+            <div class="mini-node">Survey123 embebido</div><div class="mini-arrow">↓</div>
+            <div class="mini-node">GP de ingreso deduce cuál registro es nuevo</div>
+          </div>
+          <ul>
+            <li>El flujo mezclaba Dashboard, iframe, JavaScript, Web AppBuilder y Survey123.</li>
+            <li>La carga podía eliminar registros anteriores al repetir el correo.</li>
+            <li>El ingreso deducía el registro más reciente en vez de recibir su identificador.</li>
+            <li>Dos ejecuciones simultáneas podían competir por el mismo “último” registro.</li>
+            <li>No existía control confiable del evento de envío del formulario.</li>
+            <li>El registro temporal podía permanecer después de copiarse a producción.</li>
+          </ul>
+        </article>
+        <div class="compare-arrow" aria-hidden="true">→</div>
+        <article class="compare-card after">
+          <span class="compare-label">Nueva versión</span>
+          <h3>Una sesión coordinada por el widget y aislada mediante GlobalID</h3>
+          <div class="mini-flow" aria-label="Flujo nuevo">
+            <div class="mini-node">Widget React · Experience Builder Developer</div><div class="mini-arrow">↓</div>
+            <div class="mini-node">GP KML/KMZ V2 extrae la geometría y devuelve GlobalID + tokens</div><div class="mini-arrow">↓</div>
+            <div class="mini-node">Mapa y Survey123 editan el mismo GlobalID</div><div class="mini-arrow">↓</div>
+            <div class="mini-node">GP Ingreso V2 recibe <code>registro_id</code> exacto</div>
+          </div>
+          <ul>
+            <li>Cada KML o KMZ crea una carga temporal independiente, incluso con el mismo correo.</li>
+            <li>El mapa filtra la capa temporal por el GlobalID de la sesión.</li>
+            <li>Survey123 abre directamente en modo edición sobre ese GlobalID.</li>
+            <li><code>onFormSubmitted</code> confirma el guardado antes de iniciar el flujo final.</li>
+            <li>La GP final acepta ObjectID o GlobalID y exige exactamente un registro.</li>
+            <li>El temporal se elimina solo después de verificar el registro productivo.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" id="arquitectura">
+      <div class="section-head">
+        <div><span class="kicker">Diagrama general</span><h2>Componentes de la solución</h2><p>La coordinación se concentra en el widget. No se utiliza Web AppBuilder como intermediario.</p></div>
+      </div>
+      <div class="architecture" role="img" aria-label="Arquitectura de la nueva solución SIA">
+        <div class="arch-column">
+          <div class="arch-box"><strong>Usuario solicitante</strong><small>Correo, KML/KMZ y validación humana.</small></div>
+          <div class="arch-box"><strong>Survey123 WebForm API</strong><small>Edición del registro temporal por GlobalID.</small></div>
+        </div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-column">
+          <div class="arch-box primary"><strong>Widget Carga KML/KMZ SIA</strong><small>Experience Builder Developer · React · ArcGIS Maps SDK for JavaScript</small></div>
+          <div class="arch-box"><strong>Mapa operativo integrado</strong><small>Imagen Pleiades, Visor Territorial, permisos, medio ambiente, aprobación e ingreso.</small></div>
+        </div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-column">
+          <div class="arch-box"><strong>GP KML/KMZ V2</strong><small>Normaliza anillos, crea el temporal y devuelve GlobalID + tokens.</small></div>
+          <div class="arch-box"><strong>GP Ingreso V2</strong><small>Procesa el registro exacto, verifica producción y limpia el temporal.</small></div>
+        </div>
+      </div>
+      <p class="arch-caption">El GlobalID enlaza carga, mapa, formulario y procesamiento final sin depender del correo ni del orden de llegada.</p>
+    </section>
+
+    <section class="section" id="flujo">
+      <div class="section-head">
+        <div><span class="kicker">Stepper funcional</span><h2>Recorrido completo de una solicitud</h2></div>
+      </div>
+      <ol class="stepper">
+        <li><h3>Validación inicial</h3><p>Correo y confirmación deben coincidir; se valida extensión, tamaño del KML/KMZ y control humano deslizante.</p></li>
+        <li><h3>Carga del archivo</h3><p>El widget utiliza la capacidad <code>UPLOADS</code> del GPServer y obtiene un <code>itemID</code> temporal.</p></li>
+        <li><h3>GP de carga</h3><p>La GP abre el KML o KMZ, localiza todos los Polygon y sus anillos, crea una entidad temporal independiente y calcula gerencias, extensión y tokens.</p></li>
+        <li><h3>Contrato de sesión</h3><p>El widget recupera <code>globalid</code>, <code>token</code> y <code>map_token</code>. Si falta uno, el flujo no continúa.</p></li>
+        <li><h3>Mapa aislado</h3><p>Se habilita el mapa, se filtra la capa de ingreso por GlobalID, se resalta el polígono y se ajusta la extensión.</p></li>
+        <li><h3>Edición Survey123</h3><p>El formulario se abre automáticamente con <code>mode=edit</code>, GlobalID y token de edición.</p></li>
+        <li><h3>Confirmación de envío</h3><p>La API de Survey123 emite <code>onFormSubmitted</code>; el widget evita disparos duplicados y llama la GP final.</p></li>
+        <li><h3>Ingreso productivo</h3><p>La GP recibe el identificador exacto, ejecuta siete etapas, verifica producción y elimina solo ese temporal.</p></li>
+      </ol>
+      <div class="callout" style="margin-top:18px">
+        <strong>El geoproceso final ahora es visible desde la aplicación:</strong> cuando Survey123 confirma el envío, el widget obtiene el <code>jobId</code>, consulta su estado, presenta los mensajes emitidos por cada una de las siete etapas y muestra éxito o error sin sacar al usuario de Experience Builder.
+      </div>
+    </section>
+
+    <section class="section" id="servicios">
+      <div class="section-head">
+        <div><span class="kicker">Contratos publicados</span><h2>Las dos nuevas GP Tools</h2><p>Ambas se ejecutan en modo asíncrono y el widget informa el avance al usuario.</p></div>
+      </div>
+      <div class="services">
+        <article class="service-card">
+          <header class="service-title"><span>Servicio 1 · Preparación</span><h3>Carga KML/KMZ SIA V2</h3></header>
+          <div class="service-body">
+            <div class="url-box mono" id="url-kml"><a href="https://sig.aminerals.cl/vector/rest/services/CL_CEN_ADM/CL_CEN_ADM_SIAS_KmltolayerV2/GPServer/Carga%20KML%20SIA" target="_blank" rel="noopener">https://sig.aminerals.cl/vector/rest/services/CL_CEN_ADM/CL_CEN_ADM_SIAS_KmltolayerV2/GPServer/Carga%20KML%20SIA</a><button class="copy-button" data-copy="url-kml" type="button">Copiar</button></div>
+            <table class="contract">
+              <thead><tr><th>Parámetro</th><th>Dirección</th><th>Uso</th></tr></thead>
+              <tbody>
+                <tr><td><code>kml</code></td><td><span class="direction in">Entrada</span></td><td>Archivo KML o KMZ cargado al GPServer.</td></tr>
+                <tr><td><code>mail</code></td><td><span class="direction in">Entrada</span></td><td>Correo de contacto; no funciona como clave.</td></tr>
+                <tr><td><code>mail2</code></td><td><span class="direction in">Entrada</span></td><td>Confirmación del correo.</td></tr>
+                <tr><td><code>app_referer</code></td><td><span class="direction in">Entrada</span></td><td>Origen autorizado de Experience Builder.</td></tr>
+                <tr><td><code>globalid</code></td><td><span class="direction out">Salida</span></td><td>Identificador inequívoco de la carga.</td></tr>
+                <tr><td><code>token</code></td><td><span class="direction out">Salida</span></td><td>Edición del registro mediante Survey123.</td></tr>
+                <tr><td><code>map_token</code></td><td><span class="direction out">Salida</span></td><td>Acceso temporal a las capas del mapa.</td></tr>
+              </tbody>
+            </table>
+            <p class="service-note"><strong>Mejora principal:</strong> ya no elimina otras cargas asociadas al mismo correo. Cada ejecución conserva su propio GlobalID. El lector admite XML con o sin namespace, estructuras Document/Folder/MultiGeometry, varios Polygon, anillos internos y documentos KML ubicados en subcarpetas de un KMZ.</p>
+          </div>
+        </article>
+
+        <article class="service-card">
+          <header class="service-title"><span>Servicio 2 · Consolidación</span><h3>Ingreso SIA V2</h3></header>
+          <div class="service-body">
+            <div class="url-box mono" id="url-ingreso"><a href="https://sig.aminerals.cl/vector/rest/services/CL_CEN_ADM/CL_CEN_ADM_SIAS_INGRESO_CEN_V2/GPServer/Ingreso_SIA" target="_blank" rel="noopener">https://sig.aminerals.cl/vector/rest/services/CL_CEN_ADM/CL_CEN_ADM_SIAS_INGRESO_CEN_V2/GPServer/Ingreso_SIA</a><button class="copy-button" data-copy="url-ingreso" type="button">Copiar</button></div>
+            <table class="contract">
+              <thead><tr><th>Parámetro</th><th>Dirección</th><th>Uso</th></tr></thead>
+              <tbody>
+                <tr><td><code>registro_id</code></td><td><span class="direction in">Entrada</span></td><td>ObjectID o GlobalID del registro temporal que se debe procesar.</td></tr>
+              </tbody>
+            </table>
+            <p class="service-note"><strong>Mejora principal:</strong> la herramienta deja de deducir “el registro más reciente”. Resuelve exactamente un registro y rechaza cero coincidencias, duplicados o formularios incompletos.</p>
+            <div class="pipeline" aria-label="Siete etapas de la GP Ingreso SIA">
+              <div><b>1</b>Validar temporal</div><div><b>2</b>Copiar a producción</div><div><b>3</b>Análisis espacial</div><div><b>4</b>Adjuntos y avisos</div><div><b>5</b>Actualizar estado</div><div><b>6</b>Verificar producción</div><div><b>7</b>Eliminar temporal</div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" id="formatos">
+      <div class="section-head">
+        <div><span class="kicker">Normalización geométrica</span><h2>Compatibilidad ampliada para KML y KMZ</h2><p>La GP ya no busca una ruta XML fija. Recorre la estructura por el nombre local de las etiquetas hasta obtener el arreglo de coordenadas que forma el polígono y su envolvente.</p></div>
+        <span class="status-pill">✓ Validado en servidor</span>
+      </div>
+      <div class="rules">
+        <article class="rule"><strong>Estructuras admitidas</strong><p><code>Document</code>, <code>Folder</code>, <code>Placemark</code>, <code>MultiGeometry</code> y uno o varios elementos <code>Polygon</code>.</p></article>
+        <article class="rule"><strong>XML tolerante</strong><p>Procesa KML con o sin namespace y completa en memoria prefijos utilizados pero no declarados, como <code>xsi</code>.</p></article>
+        <article class="rule"><strong>KMZ completo</strong><p>Inspecciona los documentos <code>.kml</code> internos aunque no se llamen <code>doc.kml</code> o se encuentren dentro de subcarpetas.</p></article>
+        <article class="rule"><strong>Geometría ArcGIS</strong><p>Valida coordenadas WGS84, cierra los anillos y normaliza la orientación de exteriores y huecos antes de crear el Polygon.</p></article>
+      </div>
+      <div class="pipeline" aria-label="Etapas para normalizar un KML o KMZ">
+        <div><b>1</b>Validar extensión y tamaño</div><div><b>2</b>Abrir KML o descomprimir KMZ</div><div><b>3</b>Completar prefijos XML</div><div><b>4</b>Recorrer todos los Polygon</div><div><b>5</b>Extraer longitud y latitud</div><div><b>6</b>Normalizar anillos</div><div><b>7</b>Crear geometría y extent</div>
+      </div>
+      <div class="callout" style="margin-top:18px">
+        <strong>Control de seguridad:</strong> el KMZ limita a 100 los documentos KML internos y a 50 MB el XML total descomprimido. Si no existe un polígono válido o las coordenadas están fuera de WGS84, la carga se detiene antes de crear el registro temporal.
+      </div>
+    </section>
+
+    <section class="section" id="concurrencia">
+      <div class="section-head">
+        <div><span class="kicker">Aislamiento de sesiones</span><h2>Dos cargas paralelas, incluso con el mismo correo</h2><p>El correo puede repetirse sin que una carga elimine, reemplace o muestre la información de la otra.</p></div>
+      </div>
+      <div class="concurrency-wrap">
+        <svg class="concurrency" viewBox="0 0 1120 475" role="img" aria-labelledby="concurrency-title concurrency-desc">
+          <title id="concurrency-title">Diagrama de cargas paralelas aisladas por GlobalID</title>
+          <desc id="concurrency-desc">Los usuarios A y B cargan con el mismo correo. Cada uno obtiene un GlobalID distinto, visualiza y edita su propio registro, y la herramienta final elimina únicamente el temporal procesado.</desc>
+          <defs>
+            <marker id="arrowA" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#087f86"/></marker>
+            <marker id="arrowB" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#db6d28"/></marker>
+          </defs>
+          <rect x="0" y="0" width="1120" height="475" fill="#fbfdfd"/>
+          <text x="22" y="38" font-size="13" font-weight="800" fill="#173642">TIEMPO →</text>
+          <line x1="155" y1="78" x2="1085" y2="78" stroke="#d7e1e5" stroke-width="1"/>
+          <line x1="155" y1="238" x2="1085" y2="238" stroke="#d7e1e5" stroke-width="1"/>
+          <line x1="155" y1="398" x2="1085" y2="398" stroke="#d7e1e5" stroke-width="1"/>
+          <text x="22" y="158" font-size="16" font-weight="800" fill="#087f86">Usuario A</text>
+          <text x="22" y="180" font-size="11" fill="#4f6872">correo@empresa.cl</text>
+          <text x="22" y="318" font-size="16" font-weight="800" fill="#db6d28">Usuario B</text>
+          <text x="22" y="340" font-size="11" fill="#4f6872">correo@empresa.cl</text>
+
+          <g font-family="Inter,Segoe UI,sans-serif" text-anchor="middle">
+            <rect x="170" y="115" rx="11" width="150" height="76" fill="#e8f6f5" stroke="#79bbb7"/><text x="245" y="145" font-size="12" font-weight="800" fill="#173642">Carga KML/KMZ A</text><text x="245" y="166" font-size="10" fill="#4f6872">GP de carga V2</text>
+            <rect x="380" y="115" rx="11" width="160" height="76" fill="#fff" stroke="#79bbb7"/><text x="460" y="143" font-size="12" font-weight="800" fill="#087f86">GlobalID A</text><text x="460" y="165" font-size="10" fill="#4f6872">token A · map token A</text>
+            <rect x="600" y="115" rx="11" width="160" height="76" fill="#e8f6f5" stroke="#79bbb7"/><text x="680" y="143" font-size="12" font-weight="800" fill="#173642">Mapa + Survey A</text><text x="680" y="165" font-size="10" fill="#4f6872">Filtro = GlobalID A</text>
+            <rect x="820" y="115" rx="11" width="190" height="76" fill="#eaf7f0" stroke="#7fbd9d"/><text x="915" y="143" font-size="12" font-weight="800" fill="#277a59">Ingreso exacto A</text><text x="915" y="165" font-size="10" fill="#4f6872">Verifica y elimina A</text>
+
+            <rect x="170" y="275" rx="11" width="150" height="76" fill="#fff1e7" stroke="#e6a577"/><text x="245" y="305" font-size="12" font-weight="800" fill="#173642">Carga KML/KMZ B</text><text x="245" y="326" font-size="10" fill="#4f6872">GP de carga V2</text>
+            <rect x="380" y="275" rx="11" width="160" height="76" fill="#fff" stroke="#e6a577"/><text x="460" y="303" font-size="12" font-weight="800" fill="#db6d28">GlobalID B</text><text x="460" y="325" font-size="10" fill="#4f6872">token B · map token B</text>
+            <rect x="600" y="275" rx="11" width="160" height="76" fill="#fff1e7" stroke="#e6a577"/><text x="680" y="303" font-size="12" font-weight="800" fill="#173642">Mapa + Survey B</text><text x="680" y="325" font-size="10" fill="#4f6872">Filtro = GlobalID B</text>
+            <rect x="820" y="275" rx="11" width="190" height="76" fill="#eaf7f0" stroke="#7fbd9d"/><text x="915" y="303" font-size="12" font-weight="800" fill="#277a59">Ingreso exacto B</text><text x="915" y="325" font-size="10" fill="#4f6872">Verifica y elimina B</text>
+          </g>
+          <g fill="none" stroke-width="3">
+            <line x1="320" y1="153" x2="370" y2="153" stroke="#087f86" marker-end="url(#arrowA)"/><line x1="540" y1="153" x2="590" y2="153" stroke="#087f86" marker-end="url(#arrowA)"/><line x1="760" y1="153" x2="810" y2="153" stroke="#087f86" marker-end="url(#arrowA)"/>
+            <line x1="320" y1="313" x2="370" y2="313" stroke="#db6d28" marker-end="url(#arrowB)"/><line x1="540" y1="313" x2="590" y2="313" stroke="#db6d28" marker-end="url(#arrowB)"/><line x1="760" y1="313" x2="810" y2="313" stroke="#db6d28" marker-end="url(#arrowB)"/>
+          </g>
+          <rect x="310" y="416" width="500" height="36" rx="18" fill="#173642"/><text x="560" y="439" text-anchor="middle" font-size="12" font-weight="800" fill="#fff">GlobalID A ≠ GlobalID B · El correo no controla la selección</text>
+        </svg>
+      </div>
+      <div class="legend-row"><span><i style="background:#087f86"></i>Sesión A</span><span><i style="background:#db6d28"></i>Sesión B</span><span><i style="background:#277a59"></i>Procesamiento confirmado</span></div>
+    </section>
+
+    <section class="section" id="correcciones">
+      <div class="section-head">
+        <div><span class="kicker">Errores y controles</span><h2>Matriz de problemas corregidos</h2></div>
+      </div>
+      <div class="matrix-wrap">
+        <table class="matrix">
+          <thead><tr><th>Problema anterior</th><th>Riesgo</th><th>Corrección implementada</th></tr></thead>
+          <tbody>
+            <tr><td>Web AppBuilder embebido con token y zoom</td><td>Dependencia de una aplicación legada próxima a salir de operación; la visualización quedaba expuesta a fallas de token, URL o iframe.</td><td>MapView y capas operacionales cargadas directamente dentro del widget Experience Builder Developer.</td></tr>
+            <tr><td>Cajas del Dashboard filtradas por correo</td><td>Dos cargas del mismo correo producían más de un elemento y el parámetro no podía determinar qué solicitud abrir.</td><td>El widget conserva el GlobalID devuelto por la GP y lo usa como única clave de la sesión.</td></tr>
+            <tr><td>Selección del registro más reciente</td><td>Una ejecución paralela podía cambiar cuál registro se consideraba “nuevo”.</td><td><code>registro_id</code> obligatorio y resolución exacta por ObjectID o GlobalID.</td></tr>
+            <tr><td>Correo usado para limpiar cargas</td><td>Repetir correo podía borrar una solicitud temporal aún vigente.</td><td>Se retiró el borrado por correo; cada carga genera un GlobalID independiente.</td></tr>
+            <tr><td>Capa temporal sin aislamiento visual</td><td>Un usuario podía observar polígonos temporales de otras sesiones.</td><td><code>definitionExpression</code> y consulta cartográfica filtradas por el GlobalID actual.</td></tr>
+            <tr><td>Survey123 tratado como iframe opaco</td><td>No había confirmación confiable del envío antes de ejecutar el ingreso.</td><td>Survey123 WebForm API y callback <code>onFormSubmitted</code>.</td></tr>
+            <tr><td>Un solo token para usos distintos</td><td>El referer podía solicitar autenticación o impedir cargar capas.</td><td>Token de Survey123 y token de mapa generados con referers específicos.</td></tr>
+            <tr><td>Eliminación sin confirmar producción</td><td>Pérdida del temporal aun cuando el flujo productivo estuviera incompleto.</td><td>La GP exige una coincidencia productiva; ante error conserva el temporal.</td></tr>
+            <tr><td>Procesamiento final fuera de la aplicación</td><td>El usuario no podía ver desde la experiencia si la GP seguía ejecutándose, en qué etapa estaba o por qué había fallado.</td><td>Job, estados, mensajes de las siete etapas, porcentaje, éxito y error visibles dentro del widget.</td></tr>
+            <tr><td>Reinicio disponible durante la edición</td><td>Un clic accidental en “Nueva carga” podía desmontar Survey123 y hacer perder el contexto mientras el usuario analizaba el mapa o llenaba el formulario.</td><td>Se retiró el reinicio del panel de mapa. “Iniciar otra solicitud” aparece únicamente después del procesamiento exitoso y exige confirmación.</td></tr>
+            <tr><td>KML dependiente de una estructura XML fija</td><td>Archivos sin namespace, con prefijos incompletos, polígonos anidados o entregados como KMZ fallaban antes de obtener las coordenadas.</td><td>Parser por nombre local, reparación en memoria de prefijos faltantes, recorrido de todos los Polygon y lectura de los KML internos del KMZ.</td></tr>
+            <tr><td>Posible doble ejecución del ingreso</td><td>Dos callbacks podían intentar procesar la misma solicitud.</td><td>Bloqueo de sesión <code>finalStartedRef</code> y rechazo de registros ya procesados.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section" id="seguridad">
+      <div class="section-head">
+        <div><span class="kicker">Reglas de integridad</span><h2>Qué garantiza la nueva versión</h2></div>
+      </div>
+      <div class="rules">
+        <article class="rule"><strong>El correo no es una clave</strong><p>Puede repetirse. Las decisiones técnicas se realizan con ObjectID o, preferentemente, GlobalID.</p></article>
+        <article class="rule"><strong>El GlobalID permanece durante toda la sesión</strong><p>Es el mismo valor usado por el mapa, Survey123 y la GP final.</p></article>
+        <article class="rule"><strong>Los tokens son temporales y específicos</strong><p>El widget no documenta valores reales y en consola solo muestra una versión enmascarada.</p></article>
+        <article class="rule"><strong>La limpieza es posterior a la confirmación</strong><p>Si falla Power Automate o la verificación productiva, el temporal se conserva para revisión segura.</p></article>
+      </div>
+    </section>
+
+    <section class="section" id="validacion">
+      <div class="section-head">
+        <div><span class="kicker">Evidencia de pruebas</span><h2>Estado verificado de la solución</h2><p>Validaciones efectuadas sobre los servicios publicados y el widget desplegado.</p></div>
+        <span class="status-pill">✓ Lista para pruebas funcionales</span>
+      </div>
+      <div class="checks">
+        <article class="check"><i>✓</i><div><strong>GP KML/KMZ V2 pública</strong><small>Misma URL y capacidad UPLOADS activa.</small></div></article>
+        <article class="check"><i>✓</i><div><strong>Contrato de siete parámetros</strong><small>Cuatro entradas y tres salidas verificadas por REST.</small></div></article>
+        <article class="check"><i>✓</i><div><strong>Mismo correo, dos cargas</strong><small>Ambos temporales coexistieron durante la prueba.</small></div></article>
+        <article class="check"><i>✓</i><div><strong>GlobalID diferentes</strong><small>Cada ejecución devolvió su propio identificador.</small></div></article>
+        <article class="check"><i>✓</i><div><strong>Limpieza controlada</strong><small>Los registros de prueba se eliminaron al finalizar.</small></div></article>
+        <article class="check"><i>✓</i><div><strong>Prueba integral KMZ</strong><small>Job exitoso, GlobalID retornado y registro de prueba retirado por su identificador exacto.</small></div></article>
+        <article class="check"><i>✓</i><div><strong>Widget compilado</strong><small>Versión 1.10.0 · selector y vista previa para KML/KMZ.</small></div></article>
+      </div>
+    </section>
+
+    <section class="section" id="conclusion">
+      <div class="section-head"><div><span class="kicker">Conclusión</span><h2>La modernización cumple el objetivo</h2></div></div>
+      <div class="callout">
+        La solución dejó de depender del orden de llegada, del correo como selector, de una estructura KML rígida y de integraciones separadas sin confirmación. El nuevo widget acepta KML/KMZ, controla el mapa, la edición en Survey123 y la ejecución de las GP Tools con un identificador inequívoco, permitiendo cargas paralelas y una limpieza segura del registro temporal.
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="shell">Ingreso SIA · Experience Builder Developer · Documento técnico-funcional · 2026</div>
+  </footer>
+
+  <script>
+    document.querySelectorAll('[data-copy]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        var container = document.getElementById(button.getAttribute('data-copy'));
+        var link = container && container.querySelector('a');
+        if (!link || !navigator.clipboard) return;
+        navigator.clipboard.writeText(link.href).then(function () {
+          var previous = button.textContent;
+          button.textContent = 'Copiado';
+          window.setTimeout(function () { button.textContent = previous; }, 1400);
+        });
+      });
+    });
+  </script>
+</body>
+</html>
