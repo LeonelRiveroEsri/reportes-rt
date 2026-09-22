@@ -1,5 +1,6 @@
 import { AllWidgetProps, React, SessionManager } from 'jimu-core'
 import { loadArcGISJSAPIModules } from 'jimu-arcgis'
+import { strFromU8, unzipSync } from 'fflate'
 import { IMConfig } from '../config'
 import './style.scss'
 
@@ -48,7 +49,37 @@ const OPERATIONAL_LAYERS = [
 ]
 const FINAL_JOB_STATES = ['esriJobSucceeded', 'esriJobFailed', 'esriJobCancelled', 'esriJobTimedOut']
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const SUPPORTED_SPATIAL_FILE = /\.(kml|kmz)$/i
+const MAX_KMZ_KML_DOCUMENTS = 100
+const MAX_KMZ_XML_BYTES = 50 * 1024 * 1024
 const wait = async (milliseconds: number) => await new Promise(resolve => setTimeout(resolve, milliseconds))
+
+const readKmlDocuments = async (candidate: File): Promise<Array<{ name: string, xml: string }>> => {
+  if (!candidate.name.toLowerCase().endsWith('.kmz')) {
+    return [{ name: candidate.name, xml: await candidate.text() }]
+  }
+
+  let documentCount = 0
+  let totalXmlBytes = 0
+  const archive = unzipSync(new Uint8Array(await candidate.arrayBuffer()), {
+    filter: entry => {
+      if (!entry.name.toLowerCase().endsWith('.kml')) return false
+      documentCount += 1
+      totalXmlBytes += entry.originalSize
+      if (documentCount > MAX_KMZ_KML_DOCUMENTS) throw new Error('El KMZ contiene demasiados documentos KML.')
+      if (totalXmlBytes > MAX_KMZ_XML_BYTES) throw new Error('Los documentos KML internos superan 50 MB descomprimidos.')
+      return true
+    }
+  })
+  const names = Object.keys(archive).filter(name => name.toLowerCase().endsWith('.kml'))
+  if (!names.length) throw new Error('El archivo KMZ no contiene ningún documento KML.')
+  names.sort((left, right) => {
+    const leftMain = left.replace(/\\/g, '/').toLowerCase() === 'doc.kml' ? 0 : 1
+    const rightMain = right.replace(/\\/g, '/').toLowerCase() === 'doc.kml' ? 0 : 1
+    return leftMain - rightMain || left.localeCompare(right)
+  })
+  return names.map(name => ({ name, xml: strFromU8(archive[name]) }))
+}
 
 let survey123ApiPromise: Promise<any> = null
 
@@ -120,7 +151,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   const [file, setFile] = React.useState<File>(null)
   const [dragging, setDragging] = React.useState(false)
   const [stage, setStage] = React.useState<Stage>('idle')
-  const [status, setStatus] = React.useState('Complete los datos y seleccione un archivo KML.')
+  const [status, setStatus] = React.useState('Complete los datos y seleccione un archivo KML o KMZ.')
   const [error, setError] = React.useState('')
   const [jobId, setJobId] = React.useState('')
   const [sliderValue, setSliderValue] = React.useState(0)
@@ -417,30 +448,33 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   const previewKmlOnMap = React.useCallback(async (candidate: File) => {
     const view = mapViewRef.current
     if (!view) return
-    const xml = new DOMParser().parseFromString(await candidate.text(), 'application/xml')
-    if (xml.getElementsByTagName('parsererror').length) throw new Error('El archivo KML no contiene XML válido.')
     const rings: number[][][] = []
-    const polygons = Array.from(xml.getElementsByTagNameNS('*', 'Polygon'))
-    polygons.forEach(polygon => {
-      Array.from(polygon.getElementsByTagNameNS('*', 'coordinates')).forEach(node => {
-        const ring = String(node.textContent || '').trim().split(/\s+/).map(value => {
-          const parts = value.split(',')
-          return [Number(parts[0]), Number(parts[1])]
-        }).filter(point => point.length === 2 && point.every(Number.isFinite))
-        if (ring.length >= 3) {
-          if (ring[0][0] !== ring[ring.length - 1][0] || ring[0][1] !== ring[ring.length - 1][1]) ring.push([...ring[0]])
-          rings.push(ring)
-        }
+    const documents = await readKmlDocuments(candidate)
+    documents.forEach(document => {
+      const xml = new DOMParser().parseFromString(document.xml, 'application/xml')
+      if (xml.getElementsByTagName('parsererror').length) return
+      const polygons = Array.from(xml.getElementsByTagName('*')).filter(node => node.localName.toLowerCase() === 'polygon')
+      polygons.forEach(polygon => {
+        Array.from(polygon.getElementsByTagName('*')).filter(node => node.localName.toLowerCase() === 'coordinates').forEach(node => {
+          const ring = String(node.textContent || '').trim().split(/\s+/).map(value => {
+            const parts = value.split(',')
+            return [Number(parts[0]), Number(parts[1])]
+          }).filter(point => point.length === 2 && point.every(Number.isFinite))
+          if (ring.length >= 3) {
+            if (ring[0][0] !== ring[ring.length - 1][0] || ring[0][1] !== ring[ring.length - 1][1]) ring.push([...ring[0]])
+            rings.push(ring)
+          }
+        })
       })
     })
-    if (!rings.length) throw new Error('El KML no contiene polígonos válidos para mostrar.')
+    if (!rings.length) throw new Error('El archivo KML/KMZ no contiene polígonos válidos para mostrar.')
     const [GraphicsLayer, Graphic, Polygon] = await loadArcGISJSAPIModules([
       'esri/layers/GraphicsLayer',
       'esri/Graphic',
       'esri/geometry/Polygon'
     ])
     if (previewLayerRef.current) view.map.remove(previewLayerRef.current)
-    const previewLayer = new GraphicsLayer({ title: 'Vista previa KML', listMode: 'hide' })
+    const previewLayer = new GraphicsLayer({ title: 'Vista previa KML/KMZ', listMode: 'hide' })
     const geometry = new Polygon({ rings, spatialReference: { wkid: 4326 } })
     previewLayer.add(new Graphic({
       geometry,
@@ -459,26 +493,27 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     setError('')
     setJobId('')
     if (!candidate) return
-    if (!candidate.name.toLowerCase().endsWith('.kml')) {
+    if (!SUPPORTED_SPATIAL_FILE.test(candidate.name)) {
       setFile(null)
       setStage('error')
       setStatus('Archivo no válido.')
-      setError('Seleccione un archivo con extensión .kml.')
+      setError('Seleccione un archivo con extensión .kml o .kmz.')
       return
     }
     if (candidate.size > maxFileSize) {
       setFile(null)
       setStage('error')
       setStatus('El archivo supera el tamaño permitido.')
-      setError(`El KML pesa ${(candidate.size / 1024 / 1024).toFixed(2)} MB y el máximo configurado es ${maxFileSizeMb} MB.`)
+      setError(`El archivo pesa ${(candidate.size / 1024 / 1024).toFixed(2)} MB y el máximo configurado es ${maxFileSizeMb} MB.`)
       return
     }
     setFile(candidate)
     setStage('idle')
     setStatus('Archivo preparado. Revise los datos y ejecute la carga.')
     void previewKmlOnMap(candidate).catch(previewError => {
-      console.error('[Carga KML SIA] No fue posible mostrar la vista previa:', previewError)
-      setError(previewError instanceof Error ? previewError.message : 'No fue posible dibujar el KML en el mapa.')
+      // La GP realiza la validación definitiva. Una vista previa no compatible no
+      // debe impedir la carga de un KML/KMZ que el servidor sí puede procesar.
+      console.warn('[Carga KML SIA] No fue posible preparar la vista previa:', previewError)
     })
   }
 
@@ -488,12 +523,12 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     setJobId('')
     try {
       setStage('uploading')
-      setStatus('Cargando el archivo KML al servidor…')
+      setStatus('Cargando el archivo KML/KMZ al servidor…')
       const upload = await post<UploadResponse>(`${gpServerUrl}/uploads/upload`, token => {
         const form = new FormData()
         form.append('f', 'json')
         form.append('file', file, file.name)
-        form.append('description', `KML SIA cargado desde Experience Builder: ${file.name}`)
+        form.append('description', `KML/KMZ SIA cargado desde Experience Builder: ${file.name}`)
         if (token) form.append('token', token)
         return form
       })
@@ -516,7 +551,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       if (!submitted.jobId) throw new Error('El geoproceso no devolvió un jobId.')
       setJobId(submitted.jobId)
       setStage('processing')
-      setStatus('Procesando el KML y preparando la capa temporal…')
+      setStatus('Procesando el KML/KMZ y preparando la capa temporal…')
 
       let job = submitted
       const deadline = Date.now() + 10 * 60 * 1000
@@ -566,7 +601,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       }
       setStage('success')
       setCompletedAt(new Intl.DateTimeFormat('es-CL', { dateStyle: 'short', timeStyle: 'short' }).format(new Date()))
-      setStatus('KML cargado correctamente al sistema de Ingreso SIA.')
+      setStatus('Archivo KML/KMZ cargado correctamente al sistema de Ingreso SIA.')
     } catch (processError) {
       console.error('[Carga KML SIA]', processError)
       setStage('error')
@@ -578,7 +613,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   const reset = () => {
     setFile(null)
     setStage('idle')
-    setStatus('Complete los datos y seleccione un archivo KML.')
+    setStatus('Complete los datos y seleccione un archivo KML o KMZ.')
     setError('')
     setJobId('')
     setSliderValue(0)
@@ -600,7 +635,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   const startAnotherRequest = () => {
     if (finalStage !== 'success') return
     const confirmed = window.confirm(
-      'La solicitud actual ya fue procesada correctamente. ¿Desea iniciar una nueva carga KML?'
+      'La solicitud actual ya fue procesada correctamente. ¿Desea iniciar una nueva carga KML o KMZ?'
     )
     if (confirmed) reset()
   }
@@ -612,10 +647,10 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       <section className="kml-sias__manual kml-sias__section">
         <StepTitle step={1} title="Consideraciones Generales de Ingreso SIA" />
         <div className="kml-sias__manual-content">
-          <p><strong>Advertencia de uso:</strong> Al ejecutar la herramienta de carga KML, el usuario solicitante dispondrá de <strong>1 hora</strong> para completar el formulario de ingreso de su Solicitud de Intervención de Áreas (SIA). Transcurrido ese plazo, será necesario volver a ejecutar la herramienta. La solicitud debe restringirse a áreas ubicadas dentro de <strong>una sola Área de Responsabilidad o Gerencia</strong>.</p>
+          <p><strong>Advertencia de uso:</strong> Al ejecutar la herramienta de carga KML/KMZ, el usuario solicitante dispondrá de <strong>1 hora</strong> para completar el formulario de ingreso de su Solicitud de Intervención de Áreas (SIA). Transcurrido ese plazo, será necesario volver a ejecutar la herramienta. La solicitud debe restringirse a áreas ubicadas dentro de <strong>una sola Área de Responsabilidad o Gerencia</strong>.</p>
           <p>Antes de realizar el ingreso de una SIA, es responsabilidad del usuario contar con la siguiente información y documentación:</p>
           <ol>
-            <li>Archivo KML que contenga únicamente el área solicitada.</li>
+            <li>Archivo KML o KMZ que contenga únicamente el área solicitada.</li>
             <li>Número y nombre del contrato en el que se enmarca la SIA.</li>
             <li>Fechas asociadas al contrato y a la ejecución:
               <ul><li>Inicio y término del contrato.</li><li>Inicio y término de ejecución de la SIA.</li><li>Término de la etapa de desmovilización.</li><li>Temporalidad de la infraestructura, si aplica.</li></ul>
@@ -623,7 +658,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
             <li>Nombre del área solicitada.</li>
             <li>Tipo de SIA: nueva solicitud o modificación de un área aprobada.</li>
             <li>Documentación requerida:
-              <ul><li>KML del área solicitada.</li><li>Layout de instalaciones en PNG o JPG, integrado en PDF o PPTX si contiene varias imágenes.</li><li>Fotografías del área, agrupadas en un PDF o PPTX cuando corresponda.</li></ul>
+              <ul><li>KML o KMZ del área solicitada.</li><li>Layout de instalaciones en PNG o JPG, integrado en PDF o PPTX si contiene varias imágenes.</li><li>Fotografías del área, agrupadas en un PDF o PPTX cuando corresponda.</li></ul>
             </li>
             <li>Documentación opcional:
               <ul><li>Plan de mantención de vehículos o equipos.</li><li>Plan ambiental y manejo de residuos.</li><li>Plan de permisos o resoluciones asociadas.</li></ul>
@@ -640,29 +675,29 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       </section>
 
       <section className="kml-sias__workspace kml-sias__section">
-        <StepTitle step={2} title="Carga KML de SIA" />
+        <StepTitle step={2} title="Carga KML/KMZ de SIA" />
         <div className="kml-sias__credit"><strong>Solución desarrollada por:</strong><span>Gerencia de Planificación y Desarrollo Minera Centinela · Gerencia Medio Ambiente · Unidad GIS Vicepresidencia</span></div>
         <div className="kml-sias__workspace-body">
           <div ref={mapContainerRef} className={`kml-sias__map${mapVisible ? ' is-visible' : ''}`} aria-label="Mapa de ingreso SIA" />
           {!mapVisible && <main className="kml-sias__card kml-sias__card--dashboard">
-            <div className="kml-sias__card-heading"><span>CARGA SEGURA</span><h2>Carga de archivos KML</h2><p>Complete los datos para iniciar su solicitud.</p></div>
+            <div className="kml-sias__card-heading"><span>CARGA SEGURA</span><h2>Carga de archivos KML/KMZ</h2><p>Complete los datos para iniciar su solicitud.</p></div>
             <section className="kml-sias__form" aria-label="Datos de contacto">
               <label>Ingrese su correo electrónico*:<input type="email" value={email} disabled={busy || stage === 'success'} onChange={event => setEmail(event.target.value)} autoComplete="email" />{email && !validEmail && <small>Ingrese un correo electrónico válido.</small>}</label>
               <label>Confirme su correo electrónico*:<input type="email" value={confirmation} disabled={busy || stage === 'success'} onChange={event => setConfirmation(event.target.value)} autoComplete="email" />{confirmation && !emailsMatch && <small>Los correos deben coincidir.</small>}</label>
             </section>
             <section className={`kml-sias__dropzone${dragging ? ' is-dragging' : ''}${file ? ' has-file' : ''}`}
-              onDragEnter={event => { event.preventDefault(); if (!busy) setDragging(true) }} onDragOver={event => { event.preventDefault(); if (!busy) setDragging(true) }} onDragLeave={event => { event.preventDefault(); setDragging(false) }} onDrop={event => { event.preventDefault(); setDragging(false); if (!busy) selectFile(event.dataTransfer.files?.[0]) }} onClick={() => !busy && stage !== 'success' && inputRef.current?.click()} onKeyDown={event => { if (!busy && stage !== 'success' && (event.key === 'Enter' || event.key === ' ')) inputRef.current?.click() }} role="button" tabIndex={0} aria-label="Seleccionar o arrastrar archivo KML">
-              <input ref={inputRef} type="file" accept=".kml,application/vnd.google-earth.kml+xml" disabled={busy || stage === 'success'} onChange={event => selectFile(event.target.files?.[0])} />
-              <i aria-hidden="true">KML</i><strong>{file ? 'Archivo KML preparado' : 'Arrastre y suelte su archivo KML'}</strong><button type="button">{file ? 'Cambiar archivo' : 'Seleccionar archivo'}</button>{file && <span>{file.name} · {(file.size / 1024 / 1024).toFixed(2)} MB</span>}
+              onDragEnter={event => { event.preventDefault(); if (!busy) setDragging(true) }} onDragOver={event => { event.preventDefault(); if (!busy) setDragging(true) }} onDragLeave={event => { event.preventDefault(); setDragging(false) }} onDrop={event => { event.preventDefault(); setDragging(false); if (!busy) selectFile(event.dataTransfer.files?.[0]) }} onClick={() => !busy && stage !== 'success' && inputRef.current?.click()} onKeyDown={event => { if (!busy && stage !== 'success' && (event.key === 'Enter' || event.key === ' ')) inputRef.current?.click() }} role="button" tabIndex={0} aria-label="Seleccionar o arrastrar archivo KML o KMZ">
+              <input ref={inputRef} type="file" accept=".kml,.kmz,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz" disabled={busy || stage === 'success'} onChange={event => selectFile(event.target.files?.[0])} />
+              <i aria-hidden="true">KML<br />KMZ</i><strong>{file ? 'Archivo KML/KMZ preparado' : 'Arrastre y suelte su archivo KML o KMZ'}</strong><button type="button">{file ? 'Cambiar archivo' : 'Seleccionar archivo'}</button>{file && <span>{file.name} · {(file.size / 1024 / 1024).toFixed(2)} MB</span>}
             </section>
             <section className="kml-sias__captcha"><label htmlFor={`${props.id}-human-slider`}>Verificación de seguridad <span>Deslice hasta el final</span></label><div><input id={`${props.id}-human-slider`} type="range" min="0" max="100" value={sliderValue} disabled={busy || stage === 'success'} onChange={event => setSliderValue(Number(event.target.value))} /><strong>{humanVerified ? 'OK' : `${sliderValue}%`}</strong></div>{sliderValue > 0 && !humanVerified && <small>Deslice hasta el final para continuar.</small>}</section>
             <input className="kml-sias__honeypot" type="text" value={company} onChange={event => setCompany(event.target.value)} autoComplete="off" tabIndex={-1} aria-hidden="true" />
             {(busy || stage === 'success') && <div className="kml-sias__progress" aria-live="polite"><div><span>{status}</span><strong>{progress}%</strong></div><div className="kml-sias__track"><i style={{ width: `${progress}%` }} /></div></div>}
             {error && <div className="kml-sias__alert" role="alert"><strong>No fue posible completar el proceso</strong><span>{error}</span></div>}
-            <div className="kml-sias__actions"><button type="button" className="is-primary" onClick={run} disabled={!canSubmit}>{busy ? 'Procesando…' : 'Ejecutar carga KML'}</button></div>
+            <div className="kml-sias__actions"><button type="button" className="is-primary" onClick={run} disabled={!canSubmit}>{busy ? 'Procesando…' : 'Ejecutar carga KML/KMZ'}</button></div>
           </main>}
         </div>
-        <div className="kml-sias__warning">▲ IMPORTANTE: El archivo KML sólo debe contener el área solicitada ▲</div>
+        <div className="kml-sias__warning">▲ IMPORTANTE: El archivo KML/KMZ sólo debe contener el área solicitada ▲</div>
       </section>
 
       <aside className="kml-sias__right-column">
@@ -685,7 +720,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
                 </div>
               </div>}
             </div>
-            : <div className="kml-sias__survey-placeholder"><i aria-hidden="true">4</i><strong>Formulario pendiente</strong><p>Al completar la carga del KML, el formulario se abrirá automáticamente.</p></div>}
+            : <div className="kml-sias__survey-placeholder"><i aria-hidden="true">4</i><strong>Formulario pendiente</strong><p>Al completar la carga del KML/KMZ, el formulario se abrirá automáticamente.</p></div>}
         </section>
       </aside>
     </div>
