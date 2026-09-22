@@ -14,7 +14,7 @@ const Setting = (props: AllWidgetSettingProps<IMConfig>) => {
   const gpUrl = /CL_CEN_ADM_SIAS_Kmltolayer\/GPServer/i.test(configuredGpUrl) ? DEFAULT_GP_URL : configuredGpUrl
   const surveyFormUrl = props.config.surveyFormUrl || DEFAULT_SURVEY_URL
   return <div className="kml-sias-setting jimu-widget-setting">
-    <header><span>SIA · CENTINELA</span><h3>Configuración de carga KML</h3><p>Defina el servicio publicado y el destino al finalizar.</p></header>
+    <header><span>SIA · CENTINELA</span><h3>Configuración de carga KML/KMZ</h3><p>Defina el servicio publicado y el destino al finalizar.</p></header>
     <section>
       <label htmlFor={`${props.id}-gp`}>URL de la tarea GP</label>
       <textarea id={`${props.id}-gp`} rows={5} value={gpUrl} spellCheck={false} onChange={event => update('gpTaskUrl', event.target.value)} />
