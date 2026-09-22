@@ -2,7 +2,7 @@
   "name": "carga-kml-sias",
   "label": "Carga KML SIA",
   "type": "widget",
-  "version": "1.9.1",
+  "version": "1.9.2",
   "exbVersion": "1.10.0",
   "author": "AMSA",
   "description": "Carga un archivo KML y ejecuta el geoproceso de ingreso SIA.",
