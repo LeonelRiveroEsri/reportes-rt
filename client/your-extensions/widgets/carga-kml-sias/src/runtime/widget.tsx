@@ -597,6 +597,14 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     if (inputRef.current) inputRef.current.value = ''
   }
 
+  const startAnotherRequest = () => {
+    if (finalStage !== 'success') return
+    const confirmed = window.confirm(
+      'La solicitud actual ya fue procesada correctamente. ¿Desea iniciar una nueva carga KML?'
+    )
+    if (confirmed) reset()
+  }
+
   const progress = stage === 'uploading' ? 25 : stage === 'submitting' ? 50 : stage === 'processing' ? 75 : stage === 'success' ? 100 : 0
 
   return <div className="kml-sias jimu-widget kml-sias--dashboard">
@@ -659,7 +667,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
 
       <aside className="kml-sias__right-column">
         <section className="kml-sias__selection kml-sias__section"><StepTitle step={3} title="Ubicar su SIA" />
-          {stage === 'success' ? <div className="kml-sias__selection-ready"><button type="button" onClick={() => { void centerLoadedPolygon() }}><i aria-hidden="true" /><span><strong>CENTRAR MAPA EN EL POLÍGONO CARGADO</strong><small>{file?.name} · {completedAt}</small></span><b>Ver en mapa ›</b></button><button type="button" className="kml-sias__restart" onClick={reset}>Nueva carga</button></div> : <div className="kml-sias__selection-empty"><i aria-hidden="true" /><span><strong>Solicitud pendiente</strong><small>Complete el paso 2 para cargar el polígono y abrir el formulario.</small></span></div>}
+          {stage === 'success' ? <div className="kml-sias__selection-ready"><button type="button" onClick={() => { void centerLoadedPolygon() }}><i aria-hidden="true" /><span><strong>CENTRAR MAPA EN EL POLÍGONO CARGADO</strong><small>{file?.name} · {completedAt}</small></span><b>Ver en mapa ›</b></button></div> : <div className="kml-sias__selection-empty"><i aria-hidden="true" /><span><strong>Solicitud pendiente</strong><small>Complete el paso 2 para cargar el polígono y abrir el formulario.</small></span></div>}
         </section>
         <section className="kml-sias__survey-panel kml-sias__section"><StepTitle step={4} title="Formulario de Ingreso SIA" />
           {surveyVisible
@@ -673,6 +681,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
                   {finalStage !== 'error' && <div className="kml-sias__final-track"><b style={{ width: `${finalProgress}%` }} /></div>}
                   {finalStage !== 'error' && <small>{finalProgress}%{finalJobId ? ` · Job ${finalJobId}` : ''}</small>}
                   {finalError && <p>{finalError}<br />El registro temporal se conserva para revisión segura.</p>}
+                  {finalStage === 'success' && <button type="button" className="kml-sias__new-request" onClick={startAnotherRequest}>Iniciar otra solicitud</button>}
                 </div>
               </div>}
             </div>

@@ -419,7 +419,6 @@
   .kml-sias__selection-empty small,
   .kml-sias__selection-ready small { margin-top: 3px; overflow: hidden; color: #667980; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
   .kml-sias__selection-ready b { color: #d66d2b; font-size: 12px; white-space: nowrap; }
-  .kml-sias__restart { width: 100%; padding: 5px; border: 0; border-top: 1px solid #dce4e7; color: #536970; background: #f7f9fa; cursor: pointer; font-size: 11px; }
 
   .kml-sias__survey-panel { display: flex; min-height: 0; flex: 1; flex-direction: column; }
   .kml-sias__survey-host { position: relative; display: flex; min-height: 0; flex: 1; }
@@ -477,6 +476,20 @@
     animation: none;
   }
   .kml-sias__final-process.is-success .kml-sias__final-track b { background: #27815e; }
+  .kml-sias__new-request {
+    min-height: 38px;
+    margin-top: 18px;
+    padding: 8px 16px;
+    border: 1px solid #27815e;
+    border-radius: 5px;
+    color: #fff;
+    background: #27815e;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .kml-sias__new-request:hover,
+  .kml-sias__new-request:focus { background: #1f694d; }
   .kml-sias__final-process.is-error .kml-sias__final-process-card { border-top-color: #b34b3f; }
   .kml-sias__final-process.is-error .kml-sias__final-process-card > i {
     border: 0;
