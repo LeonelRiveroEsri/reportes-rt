@@ -14,6 +14,8 @@ procesar archivos Excel y explorar vuelos drone de PAO.
 - `client/dist/widgets/procesador_excel`: bundle compilado para Netlify.
 - `client/your-extensions/widgets/selector-imagenes-drone`: fuente del selector PAO.
 - `client/dist/widgets/selector-imagenes-drone`: bundle compilado del selector PAO.
+- `client/your-extensions/widgets/carga-kml-sias`: fuente del flujo de carga KML e ingreso SIA.
+- `client/dist/widgets/carga-kml-sias`: bundle compilado para Netlify.
 - `gptools`: Python Toolbox, generador ReportLab y recursos.
 - `gptools/excel_processor_gp`: Python Toolbox que cuenta registros de un XLSX.
 - `scripts/pack_netlify.py`: genera `public/exb/widgets/reportes_rt`.
@@ -29,6 +31,7 @@ https://<sitio>.netlify.app/exb/widgets/analisis-seleccion/manifest.json
 https://<sitio>.netlify.app/exb/widgets/reportes_rt/manifest.json
 https://<sitio>.netlify.app/exb/widgets/procesador_excel/manifest.json
 https://<sitio>.netlify.app/exb/widgets/selector-imagenes-drone/manifest.json
+https://<sitio>.netlify.app/exb/widgets/carga-kml-sias/manifest.json
 ```
 
 El workflow `build-public.yml` mantiene una copia navegable sin secretos.
@@ -45,8 +48,8 @@ $env:OUTPUT_FOLDER='./dist-prod'
 & 'D:\node\node-v16\node.exe' .\node_modules\webpack\bin\webpack.js --mode production
 ```
 
-Copie luego `client/dist-prod/widgets/reportes_rt` sobre
-`client/dist/widgets/reportes_rt` en este repositorio.
+Copie luego la carpeta del widget desde `client/dist-prod/widgets` sobre
+la carpeta correspondiente en `client/dist/widgets` de este repositorio.
 
 ## Publicar la GP Tool
 
