@@ -200,9 +200,17 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     highlightRef.current = null
     if (previewLayerRef.current) view.map.remove(previewLayerRef.current)
     previewLayerRef.current = null
+    const safeGlobalId = globalId.replace(/[{}]/g, '').replace(/'/g, "''")
+    const ownTemporaryFeature = `globalid = '{${safeGlobalId}}'`
     const layers = OPERATIONAL_LAYERS.map(definition => definition.type === 'map-image'
       ? new MapImageLayer({ url: definition.url, title: definition.title, visible: definition.visible })
-      : new FeatureLayer({ url: definition.url, title: definition.title, visible: definition.visible, outFields: ['*'] }))
+      : new FeatureLayer({
+        url: definition.url,
+        title: definition.title,
+        visible: definition.visible,
+        outFields: ['*'],
+        definitionExpression: definition.target ? ownTemporaryFeature : undefined
+      }))
     view.map.removeAll()
     view.map.addMany(layers)
     await Promise.all(layers.map(async (operationalLayer: any) => {
@@ -220,7 +228,6 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     const layer = layers[OPERATIONAL_LAYERS.findIndex(definition => definition.target)]
     await layer.load()
     layer.visible = true
-    const safeGlobalId = globalId.replace(/[{}]/g, '').replace(/'/g, "''")
     const result = await layer.queryFeatures({
       where: `globalid = '{${safeGlobalId}}'`,
       outFields: ['objectid', 'globalid'],
