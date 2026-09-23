@@ -29,8 +29,13 @@ interface JobResponse {
 }
 
 interface ResultResponse {
-  value?: string
+  value?: string | number
   error?: ArcGISError
+}
+
+interface UserProgress {
+  percent: number
+  status: string
 }
 
 const DEFAULT_GP_URL = 'https://sig.aminerals.cl/vector/rest/services/CL_CEN_ADM/CL_CEN_ADM_SIAS_KmltolayerV2/GPServer/Carga%20KML%20SIA'
@@ -53,6 +58,19 @@ const SUPPORTED_SPATIAL_FILE = /\.(kml|kmz)$/i
 const MAX_KMZ_KML_DOCUMENTS = 100
 const MAX_KMZ_XML_BYTES = 50 * 1024 * 1024
 const wait = async (milliseconds: number) => await new Promise(resolve => setTimeout(resolve, milliseconds))
+
+const latestUserProgress = (messages: JobMessage[] = []): UserProgress | null => {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const match = String(messages[index]?.description || '').match(/\[SIA_PROGRESS:(\d{1,3})\]\s*(.+)/i)
+    if (match) {
+      return {
+        percent: Math.max(0, Math.min(100, Number(match[1]))),
+        status: match[2].trim()
+      }
+    }
+  }
+  return null
+}
 
 const readKmlDocuments = async (candidate: File): Promise<Array<{ name: string, xml: string }>> => {
   if (!candidate.name.toLowerCase().endsWith('.kmz')) {
@@ -164,7 +182,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   const [finalStage, setFinalStage] = React.useState<FinalStage>('idle')
   const [finalStatus, setFinalStatus] = React.useState('')
   const [finalError, setFinalError] = React.useState('')
-  const [finalJobId, setFinalJobId] = React.useState('')
+  const [finalSiaId, setFinalSiaId] = React.useState('')
   const [finalProgress, setFinalProgress] = React.useState(0)
   const inputRef = React.useRef<HTMLInputElement>(null)
   const mapContainerRef = React.useRef<HTMLDivElement>(null)
@@ -353,10 +371,11 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     if (!globalId || finalStartedRef.current) return
     finalStartedRef.current = true
     setFinalStage('submitting')
-    setFinalStatus('Encuesta guardada correctamente. Iniciando el procesamiento final…')
+    setFinalStatus('Formulario recibido correctamente. Preparando el registro de su solicitud…')
     setFinalError('')
-    setFinalJobId('')
+    setFinalSiaId('')
     setFinalProgress(5)
+    let progressTimer: number | undefined
 
     try {
       const submitted = await post<JobResponse>(`${FINAL_GP_URL}/submitJob`, token => {
@@ -366,10 +385,13 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       }, surveyToken ? [surveyToken] : [])
       if (!submitted.jobId) throw new Error('El proceso final no devolvió un jobId.')
 
-      setFinalJobId(submitted.jobId)
+      console.info('[Carga KML SIA] Proceso final iniciado:', submitted.jobId)
       setFinalStage('processing')
-      setFinalStatus('Procesando la solicitud SIA…')
+      setFinalStatus('Validando la información enviada en el formulario…')
       setFinalProgress(10)
+      progressTimer = window.setInterval(() => {
+        setFinalProgress(current => current < 92 ? Math.min(92, current + 1) : current)
+      }, 4000)
 
       let job = submitted
       const deadline = Date.now() + 30 * 60 * 1000
@@ -381,11 +403,10 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
           if (token) params.set('token', token)
           return params
         }, surveyToken ? [surveyToken] : [])
-        const latestMessage = job.messages?.map(message => message.description).filter(Boolean).pop()
-        if (latestMessage) {
-          setFinalStatus(latestMessage)
-          const step = latestMessage.match(/Etapa\s+(\d)\/7/i)
-          if (step) setFinalProgress(Math.min(95, 10 + Math.round((Number(step[1]) / 7) * 85)))
+        const userProgress = latestUserProgress(job.messages)
+        if (userProgress) {
+          setFinalStatus(userProgress.status)
+          setFinalProgress(current => Math.max(current, userProgress.percent))
         }
       }
 
@@ -394,14 +415,27 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
         throw new Error(detail || `El procesamiento final terminó con estado ${job.jobStatus}.`)
       }
 
+      setFinalStatus('Confirmando el número definitivo de su solicitud…')
+      setFinalProgress(current => Math.max(current, 98))
+      const result = await post<ResultResponse>(`${FINAL_GP_URL}/jobs/${encodeURIComponent(submitted.jobId)}/results/id_sias`, token => {
+        const params = new URLSearchParams({ f: 'json' })
+        if (token) params.set('token', token)
+        return params
+      }, surveyToken ? [surveyToken] : [])
+      const siaId = String(result.value ?? '').trim()
+      if (!siaId || siaId === 'PUBLICACION_VALIDADA') throw new Error('El proceso terminó sin informar el número SIA asignado.')
+
+      setFinalSiaId(siaId)
       setFinalStage('success')
-      setFinalStatus('Solicitud SIA ingresada y procesada correctamente.')
+      setFinalStatus('Su solicitud quedó debidamente registrada. Los antecedentes y archivos adjuntos fueron archivados, y las notificaciones fueron enviadas a las personas correspondientes. Recibirá una confirmación en su correo electrónico.')
       setFinalProgress(100)
     } catch (processError) {
       console.error('[Carga KML SIA] Error en procesamiento posterior a Survey123:', processError)
       setFinalStage('error')
-      setFinalStatus('La encuesta fue guardada, pero el procesamiento final no pudo completarse.')
-      setFinalError(processError instanceof Error ? processError.message : 'Ocurrió un error inesperado en el procesamiento final.')
+      setFinalStatus('No pudimos completar el registro definitivo de la solicitud.')
+      setFinalError('Sus datos permanecen guardados para una revisión segura. Intente nuevamente más tarde o contacte al equipo responsable del proceso SIA.')
+    } finally {
+      if (progressTimer !== undefined) window.clearInterval(progressTimer)
     }
   }, [post, surveyToken])
 
@@ -626,7 +660,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
     setFinalStage('idle')
     setFinalStatus('')
     setFinalError('')
-    setFinalJobId('')
+    setFinalSiaId('')
     setFinalProgress(0)
     finalStartedRef.current = false
     if (inputRef.current) inputRef.current.value = ''
@@ -709,14 +743,30 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
             ? <div className="kml-sias__survey-host">
               <div ref={surveyContainerRef} className="kml-sias__survey" aria-label="Formulario de ingreso SIA" />
               {finalStage !== 'idle' && <div className={`kml-sias__final-process is-${finalStage}`} role={finalStage === 'error' ? 'alert' : 'status'} aria-live="polite">
-                <div className="kml-sias__final-process-card">
-                  <i aria-hidden="true">{finalStage === 'success' ? '✓' : finalStage === 'error' ? '!' : ''}</i>
-                  <strong>{finalStage === 'success' ? 'Solicitud procesada' : finalStage === 'error' ? 'Procesamiento pendiente' : 'Procesando solicitud SIA'}</strong>
-                  <span>{finalStatus}</span>
-                  {finalStage !== 'error' && <div className="kml-sias__final-track"><b style={{ width: `${finalProgress}%` }} /></div>}
-                  {finalStage !== 'error' && <small>{finalProgress}%{finalJobId ? ` · Job ${finalJobId}` : ''}</small>}
-                  {finalError && <p>{finalError}<br />El registro temporal se conserva para revisión segura.</p>}
-                  {finalStage === 'success' && <button type="button" className="kml-sias__new-request" onClick={startAnotherRequest}>Iniciar otra solicitud</button>}
+                <div className={`kml-sias__final-process-card${finalStage === 'success' ? ' is-confirmation' : ''}`}>
+                  {finalStage === 'success'
+                    ? <>
+                      <div className="kml-sias__success-header">SIA ingresada correctamente</div>
+                      <div className="kml-sias__success-stripe" aria-hidden="true"><i /><i /><i /><i /></div>
+                      <div className="kml-sias__success-content">
+                        <i className="kml-sias__success-check" aria-hidden="true">✓</i>
+                        <p>Su Solicitud de Intervención de Área <strong>(SIA) N.° {finalSiaId}</strong> ha sido registrada exitosamente.</p>
+                        <div className="kml-sias__final-sia-id"><span>Número de solicitud</span><b>{finalSiaId}</b></div>
+                        <div className="kml-sias__success-detail"><strong>Proceso completado:</strong> los análisis finalizaron y los archivos adjuntos quedaron respaldados en SharePoint.</div>
+                        <div className="kml-sias__success-mail"><strong>Correos enviados:</strong> las notificaciones fueron enviadas a las personas correspondientes. El solicitante recibirá un correo electrónico con el detalle de la solicitud ingresada.</div>
+                        <p className="kml-sias__success-question">¿Desea ingresar otra SIA?</p>
+                        <button type="button" className="kml-sias__new-request" onClick={startAnotherRequest}>Ingresar nueva SIA</button>
+                        <p className="kml-sias__success-support">Ante cualquier consulta o inconveniente, contacte a <strong>Gabriela Tirado</strong><br /><a href="mailto:gtirado@mineracentinela.cl">gtirado@mineracentinela.cl</a></p>
+                      </div>
+                    </>
+                    : <>
+                      <i aria-hidden="true">{finalStage === 'error' ? '!' : ''}</i>
+                      <strong>{finalStage === 'error' ? 'Registro pendiente de revisión' : 'Registrando su solicitud SIA'}</strong>
+                      <span>{finalStatus}</span>
+                      {finalStage !== 'error' && <div className="kml-sias__final-track"><b style={{ width: `${finalProgress}%` }} /></div>}
+                      {finalStage !== 'error' && <small>{finalProgress}% completado</small>}
+                      {finalError && <p>{finalError}</p>}
+                    </>}
                 </div>
               </div>}
             </div>
