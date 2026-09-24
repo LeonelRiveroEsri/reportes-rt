@@ -7,7 +7,9 @@ Widget para ArcGIS Experience Builder Developer Edition 1.10 que gestiona la car
 1. Valida dos correos coincidentes y un archivo `.kml` o `.kmz` de hasta 10 MB.
 2. Sube el archivo al endpoint `GPServer/uploads/upload`.
 3. Ejecuta de forma asíncrona la tarea configurada con `kml`, `mail`, `mail2` y `app_referer`.
-4. Recupera `globalid`, `token` y `map_token`, muestra el polígono sobre las capas operacionales y abre Survey123 en modo edición.
+4. Recupera `globalid`, `token` y `map_token`, muestra el polígono sobre las capas operacionales y abre el formulario `65c440eb343a42168d32d67de9a5ec2e` en modo edición.
 5. Tras el envío del formulario, ejecuta la GP final para mover exclusivamente ese GlobalID a la capa productiva.
+
+La GP adjunta automáticamente el archivo cartográfico como `KMZ.zip`; el formulario no vuelve a solicitar el KML/KMZ.
 
 La autenticación usa la sesión activa del portal de Experience Builder. El widget no almacena credenciales administrativas.

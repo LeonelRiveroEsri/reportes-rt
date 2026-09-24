@@ -39,7 +39,7 @@ interface UserProgress {
 }
 
 const DEFAULT_GP_URL = 'https://sig.aminerals.cl/vector/rest/services/CL_CEN_ADM/CL_CEN_ADM_SIAS_KmltolayerV2/GPServer/Carga%20KML%20SIA'
-const DEFAULT_SURVEY_URL = 'https://survey123.arcgis.com/share/a921894bf7b84c968a991d0691db0e54'
+const DEFAULT_SURVEY_URL = 'https://survey123.arcgis.com/share/65c440eb343a42168d32d67de9a5ec2e'
 const FINAL_GP_URL = 'https://sig.aminerals.cl/vector/rest/services/CL_CEN_ADM/CL_CEN_ADM_SIAS_INGRESO_CEN_V2/GPServer/Ingreso_SIA'
 const SURVEY123_API_URL = 'https://survey123.arcgis.com/api/jsapi/'
 const TARGET_LAYER_URL = 'https://sig.aminerals.cl/server/rest/services/Hosted/Solicitud_intervencion_de_areas_USER/FeatureServer/0'
