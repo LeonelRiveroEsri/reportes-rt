@@ -4,7 +4,7 @@ import { IMConfig } from '../config'
 import './style.scss'
 
 const DEFAULT_GP_URL = 'https://sig.aminerals.cl/vector/rest/services/CL_CEN_ADM/CL_CEN_ADM_SIAS_KmltolayerV2/GPServer/Carga%20KML%20SIA'
-const DEFAULT_SURVEY_URL = 'https://survey123.arcgis.com/share/a921894bf7b84c968a991d0691db0e54'
+const DEFAULT_SURVEY_URL = 'https://survey123.arcgis.com/share/65c440eb343a42168d32d67de9a5ec2e'
 
 const Setting = (props: AllWidgetSettingProps<IMConfig>) => {
   const update = (key: 'gpTaskUrl' | 'surveyFormUrl' | 'maxFileSizeMb', value: string | number) => {

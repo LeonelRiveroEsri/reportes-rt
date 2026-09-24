@@ -625,7 +625,12 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       diagnosticUrl.searchParams.set('token', '[TOKEN_OCULTO]')
       console.info('[Carga KML SIA] URL Survey123:', diagnosticUrl.toString())
       setSurveyGlobalId(globalId)
-      setSurveyToken(outputToken)
+      // Survey123 se ejecuta incrustado en el mismo documento de Experience
+      // Builder. Sus solicitudes al Portal llevan como Referer el origen de la
+      // Experience, por lo que debe usar el token ligado a app_referer. El
+      // outputToken se conserva en la GP para el enlace/iframe legado que sí
+      // se ejecuta desde survey123.arcgis.com.
+      setSurveyToken(mapToken)
       setSurveyVisible(true)
       try {
         setStatus('Localizando y resaltando el polígono en el mapa…')
