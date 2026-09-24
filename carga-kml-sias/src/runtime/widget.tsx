@@ -442,6 +442,8 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
   React.useEffect(() => {
     if (!surveyVisible || !surveyGlobalId || !surveyToken || !surveyItemId || !surveyContainerRef.current) return
     let cancelled = false
+    let tokenInjectionTimer: number | undefined
+    let tokenInjectionAttempts = 0
     const container = surveyContainerRef.current
 
     const mountSurvey = async () => {
@@ -462,6 +464,31 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
           void runFinalProcessing(surveyGlobalId)
         }
       })
+
+      // La API crea un iframe y normalmente entrega la credencial mediante
+      // postMessage. Algunos navegadores/sesiones no completan ese intercambio
+      // y Survey123 muestra el inicio de sesión aunque el token sea válido.
+      // Mantener el token también en la URL del iframe evita esa dependencia y
+      // conserva los eventos de la API (incluido onFormSubmitted).
+      const injectTokenIntoIframe = () => {
+        if (cancelled) return
+        const iframe = surveyWebFormRef.current?.getIframeDom?.() as HTMLIFrameElement
+        if (!iframe?.src) {
+          tokenInjectionAttempts += 1
+          if (tokenInjectionAttempts < 100) {
+            tokenInjectionTimer = window.setTimeout(injectTokenIntoIframe, 100)
+          } else {
+            console.warn('[Carga KML SIA] Survey123 no expuso el iframe para completar la autenticación.')
+          }
+          return
+        }
+        const iframeUrl = new URL(iframe.src, window.location.href)
+        if (iframeUrl.searchParams.get('token') !== surveyToken) {
+          iframeUrl.searchParams.set('token', surveyToken)
+          iframe.src = iframeUrl.toString()
+        }
+      }
+      injectTokenIntoIframe()
     }
 
     void mountSurvey().catch(surveyError => {
@@ -473,6 +500,7 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
 
     return () => {
       cancelled = true
+      if (tokenInjectionTimer !== undefined) window.clearTimeout(tokenInjectionTimer)
       if (surveyWebFormRef.current?.destroy) surveyWebFormRef.current.destroy()
       surveyWebFormRef.current = null
       container.innerHTML = ''
@@ -625,12 +653,9 @@ const Widget = (props: AllWidgetProps<IMConfig>) => {
       diagnosticUrl.searchParams.set('token', '[TOKEN_OCULTO]')
       console.info('[Carga KML SIA] URL Survey123:', diagnosticUrl.toString())
       setSurveyGlobalId(globalId)
-      // Survey123 se ejecuta incrustado en el mismo documento de Experience
-      // Builder. Sus solicitudes al Portal llevan como Referer el origen de la
-      // Experience, por lo que debe usar el token ligado a app_referer. El
-      // outputToken se conserva en la GP para el enlace/iframe legado que sí
-      // se ejecuta desde survey123.arcgis.com.
-      setSurveyToken(mapToken)
+      // El formulario de la API se ejecuta dentro de un iframe alojado en
+      // survey123.arcgis.com; por eso utiliza el token ligado a ese referer.
+      setSurveyToken(outputToken)
       setSurveyVisible(true)
       try {
         setStatus('Localizando y resaltando el polígono en el mapa…')
