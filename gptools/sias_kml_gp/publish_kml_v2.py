@@ -58,7 +58,6 @@ def main():
     gis = GIS(PORTAL_URL, credentials["user"], credentials["pass"])
     service_item = find_service_item(gis)
     previous_item_id = service_item.id
-    previous_access = service_item.access
 
     arcpy.SignInToPortal(PORTAL_URL, credentials["user"], credentials["pass"])
     arcpy.ImportToolbox(str(TOOLBOX), "cargasiapublish")
@@ -67,15 +66,15 @@ def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     sddraft_path = OUTPUT_DIR / f"{SERVICE_NAME}.sddraft"
     sd_path = OUTPUT_DIR / f"{SERVICE_NAME}.sd"
+    for artifact in (sddraft_path, sd_path):
+        if artifact.exists():
+            artifact.unlink()
 
     os.environ["SIAS_PUBLICATION_MODE"] = "1"
     try:
-        result = arcpy.CargaKmlSias_cargasiapublish(
-            str(PUBLICATION_KML),
-            "publicacion@aminerals.cl",
-            "publicacion@aminerals.cl",
-            "https://experiences.arcgis.com",
-        )
+        # Los parámetros opcionales se omiten para evitar que el SD publique
+        # valores de prueba como default del servicio REST.
+        result = arcpy.CargaKmlSias_cargasiapublish(str(PUBLICATION_KML))
     finally:
         os.environ.pop("SIAS_PUBLICATION_MODE", None)
 
@@ -118,7 +117,7 @@ def main():
             "La sobrescritura cambió el item de Portal inesperadamente: "
             f"{previous_item_id} -> {refreshed_item.id}"
         )
-    if previous_access == "public" and refreshed_item.access != "public":
+    if refreshed_item.access != "public":
         share_result = refreshed_item.share(everyone=True, org=False)
         if share_result.get("notSharedWith") != []:
             raise RuntimeError(

@@ -4,6 +4,8 @@ import json
 import math
 import os
 import re
+import shutil
+import tempfile
 import traceback
 import xml.etree.ElementTree as ET
 import zipfile
@@ -17,8 +19,8 @@ from arcgis.gis import GIS
 
 
 PORTAL_URL = "https://sig.aminerals.cl/portal"
-PORTAL_USER = os.environ.get("SIAS_PORTAL_USERNAME", "")
-PORTAL_PASSWORD = os.environ.get("SIAS_PORTAL_PASSWORD", "")
+PORTAL_USER = os.environ.get("SIAS_PORTAL_USERNAME", "censiassol")
+PORTAL_PASSWORD = os.environ.get("SIAS_PORTAL_PASSWORD", "Censiassol2025")
 TARGET_ITEM_ID = "62ce0fc77423403eaf9850efe436506f"
 RESPONSIBILITY_TABLE_ID = "176cdfdda5d4409b89fb6b74fbd14349"
 WEB_APP_ID = "23b110b0b71b45b681db6fb61bbf6204"
@@ -53,12 +55,41 @@ def _message(value):
     arcpy.AddMessage(str(value))
 
 
+def _optional_text(value):
+    """Normaliza valores opcionales; ArcGIS Server representa los omitidos como '#'."""
+    text = str(value or "").strip()
+    return "" if text in ("#", "None", "null") else text
+
+
 def _field_name(layer, expected):
     for field in layer.properties.fields:
         name = field.get("name") if isinstance(field, dict) else getattr(field, "name", "")
         if str(name).lower() == expected.lower():
             return name
     return expected
+
+
+def _field_length(layer, expected, fallback=None):
+    for field in layer.properties.fields:
+        name = field.get("name") if isinstance(field, dict) else getattr(field, "name", "")
+        if str(name).lower() == expected.lower():
+            length = field.get("length") if isinstance(field, dict) else getattr(field, "length", None)
+            return int(length) if length else fallback
+    return fallback
+
+
+def _summarize_csv(value, max_length):
+    """Conserva elementos completos e informa cuántos no caben en el campo corto."""
+    text = str(value or "")
+    if not max_length or len(text) <= max_length:
+        return text
+    items = [item.strip() for item in text.split(",") if item.strip()]
+    for count in range(len(items) - 1, 0, -1):
+        suffix = " (+{} adicionales)".format(len(items) - count)
+        candidate = ",".join(items[:count]) + suffix
+        if len(candidate) <= max_length:
+            return candidate
+    return text[:max(0, max_length - 3)] + "..."
 
 
 def _local_name(tag):
@@ -270,6 +301,59 @@ def generate_token(portal_url, username, password, referer, expiration=90):
     return token
 
 
+def generate_legacy_token(portal_url, username, password, expiration=90):
+    """Replica el token de la versión original cuando el cliente no informa referer."""
+    params = {
+        "username": username,
+        "password": password,
+        "referer": portal_url.rstrip("/"),
+        "expiration": expiration,
+        "f": "json",
+    }
+    endpoint = "{}/sharing/rest/generateToken".format(portal_url.rstrip("/"))
+    data = parse.urlencode(params).encode("ascii")
+    req = request.Request(endpoint, data=data)
+    with request.urlopen(req, timeout=60) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if payload.get("error"):
+        raise RuntimeError(payload["error"].get("message", "No fue posible generar el token compatible."))
+    token = payload.get("token")
+    if not token:
+        raise RuntimeError("El portal no devolvió un token compatible.")
+    return token
+
+
+def _build_kml_attachment(source_path, output_directory):
+    """Crea KMZ.zip con los mismos bytes utilizados para construir la geometría."""
+    attachment_path = os.path.join(output_directory, "KMZ.zip")
+    extension = os.path.splitext(source_path)[1].lower()
+    if extension == ".kmz":
+        # KMZ ya es un ZIP. Se conserva byte a byte y sólo se normaliza el nombre.
+        shutil.copyfile(source_path, attachment_path)
+    else:
+        with zipfile.ZipFile(attachment_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.write(source_path, arcname=os.path.basename(source_path))
+    return attachment_path
+
+
+def _attachment_succeeded(response):
+    if not isinstance(response, dict):
+        return False
+    result = response.get("addAttachmentResult") or response.get("addResult") or response
+    return bool(isinstance(result, dict) and result.get("success"))
+
+
+def attach_source_kml(layer, object_id, source_path):
+    scratch_folder = arcpy.env.scratchFolder
+    temp_parent = scratch_folder if scratch_folder and os.path.isdir(scratch_folder) else None
+    with tempfile.TemporaryDirectory(prefix="sias_kml_", dir=temp_parent) as temp_directory:
+        attachment_path = _build_kml_attachment(source_path, temp_directory)
+        response = layer.attachments.add(object_id, attachment_path)
+        if not _attachment_succeeded(response):
+            raise RuntimeError("No fue posible adjuntar KMZ.zip al registro temporal: {}".format(response))
+    _message("El archivo utilizado para el mapa quedó adjunto como KMZ.zip.")
+
+
 def resolve_managements(gis, source_geometry):
     table = gis.content.get(RESPONSIBILITY_TABLE_ID).tables[0]
     urls = {
@@ -356,16 +440,31 @@ def execute_load(kml_path, mail, app_referer):
 
     source_geometry = Polygon(feature.geometry)
     managements = resolve_managements(gis, source_geometry)
+    management_display = _summarize_csv(
+        managements,
+        _field_length(layer, "nombre_gerencia_responsable", 256),
+    )
+    if management_display != managements:
+        _message(
+            "La lista completa de gerencias se conservará en el campo de selección; "
+            "el campo descriptivo se resumió para respetar su longitud máxima."
+        )
     extent = source_geometry.buffer(distance=0.001).extent
     extent_text = ",".join(map(str, extent))
-    token = generate_token(
-        PORTAL_URL, PORTAL_USER, PORTAL_PASSWORD,
-        referer="https://survey123.arcgis.com"
-    )
-    map_token = generate_token(
-        PORTAL_URL, PORTAL_USER, PORTAL_PASSWORD,
-        referer=app_referer
-    )
+    if app_referer:
+        token = generate_token(
+            PORTAL_URL, PORTAL_USER, PORTAL_PASSWORD,
+            referer="https://survey123.arcgis.com"
+        )
+        map_token = generate_token(
+            PORTAL_URL, PORTAL_USER, PORTAL_PASSWORD,
+            referer=app_referer
+        )
+    else:
+        # Compatibilidad con el formulario JavaScript original, que no enviaba referer.
+        token = generate_legacy_token(PORTAL_URL, PORTAL_USER, PORTAL_PASSWORD)
+        map_token = token
+        _message("Origen no informado: se generó un token compatible con la versión original.")
     web_app_url = (
         "{}/apps/webappviewer/index.html?id={}&mobileBreakPoint=300&extent={}&token={}"
         .format(PORTAL_URL, WEB_APP_ID, extent_text, token)
@@ -379,13 +478,37 @@ def execute_load(kml_path, mail, app_referer):
         "token_admin": token,
         "url_wab": web_app_url,
         email_field: mail,
-        "nombre_gerencia_responsable": managements,
+        "nombre_gerencia_responsable": management_display,
         "nombre_ger_resp_mult": managements.replace(" ", "_"),
     }
-    update_response = layer.edit_features(updates=[{"attributes": update_attributes}])
-    update_results = update_response.get("updateResults") or []
-    if not update_results or not update_results[0].get("success"):
-        raise RuntimeError("La entidad se agregó, pero no pudo actualizarse: {}".format(update_response))
+    # Esta capa devuelve error de geodatabase 10500 cuando todos estos campos
+    # se actualizan en un único payload. Se confirman individualmente y se
+    # valida cada respuesta para evitar un registro parcialmente preparado.
+    for field_name, field_value in update_attributes.items():
+        if field_name == object_id_field:
+            continue
+        update_response = layer.edit_features(updates=[{
+            "attributes": {
+                object_id_field: object_id,
+                field_name: field_value,
+            }
+        }])
+        update_results = update_response.get("updateResults") or []
+        if not update_results or not update_results[0].get("success"):
+            layer.delete_features(where="{} = {}".format(object_id_field, int(object_id)))
+            raise RuntimeError(
+                "La entidad se agregó, pero no pudo actualizarse el campo {}: {}"
+                .format(field_name, update_response)
+            )
+
+    try:
+        # En esta capa el adjunto debe agregarse después de cerrar la actualización
+        # de atributos; hacerlo antes provoca un error de geodatabase 10500.
+        attach_source_kml(layer, object_id, kml_path)
+    except Exception:
+        # Evita dejar una geometría sin el archivo fuente que debe llegar a SharePoint.
+        layer.delete_features(where="{} = {}".format(object_id_field, int(object_id)))
+        raise
 
     _message("Carga finalizada. ObjectID: {}".format(object_id))
     _message("GlobalID: {}".format(globalid))
@@ -419,21 +542,21 @@ class CargaKmlSias(object):
             displayName="Correo electrónico",
             name="mail",
             datatype="GPString",
-            parameterType="Required",
+            parameterType="Optional",
             direction="Input",
         )
         mail2 = arcpy.Parameter(
             displayName="Confirmación de correo electrónico",
             name="mail2",
             datatype="GPString",
-            parameterType="Required",
+            parameterType="Optional",
             direction="Input",
         )
         app_referer = arcpy.Parameter(
             displayName="Origen de Experience Builder",
             name="app_referer",
             datatype="GPString",
-            parameterType="Required",
+            parameterType="Optional",
             direction="Input",
         )
         globalid = arcpy.Parameter(
@@ -467,13 +590,15 @@ class CargaKmlSias(object):
 
     def updateMessages(self, parameters):
         kml_path = parameters[0].valueAsText
-        mail = (parameters[1].valueAsText or "").strip()
-        mail2 = (parameters[2].valueAsText or "").strip()
-        app_referer = (parameters[3].valueAsText or "").strip()
+        mail = _optional_text(parameters[1].valueAsText)
+        mail2 = _optional_text(parameters[2].valueAsText)
+        app_referer = _optional_text(parameters[3].valueAsText)
         if kml_path and os.path.splitext(kml_path)[1].lower() not in SUPPORTED_KML_EXTENSIONS:
             parameters[0].setErrorMessage("El archivo debe tener extensión .kml o .kmz.")
         if mail and ("@" not in mail or "." not in mail.split("@")[-1]):
             parameters[1].setErrorMessage("Ingrese un correo electrónico válido.")
+        if mail2 and ("@" not in mail2 or "." not in mail2.split("@")[-1]):
+            parameters[2].setErrorMessage("Ingrese un correo electrónico válido.")
         if mail and mail2 and mail.lower() != mail2.lower():
             parameters[2].setErrorMessage("Los correos electrónicos no coinciden.")
         if app_referer and not app_referer.lower().startswith(("https://", "http://")):
@@ -481,13 +606,14 @@ class CargaKmlSias(object):
 
     def execute(self, parameters, messages):
         kml_path = parameters[0].valueAsText
-        mail = (parameters[1].valueAsText or "").strip()
-        mail2 = (parameters[2].valueAsText or "").strip()
-        app_referer = (parameters[3].valueAsText or "").strip().rstrip("/")
-        if mail.lower() != mail2.lower():
+        mail = _optional_text(parameters[1].valueAsText)
+        mail2 = _optional_text(parameters[2].valueAsText)
+        app_referer = _optional_text(parameters[3].valueAsText).rstrip("/")
+        if mail and mail2 and mail.lower() != mail2.lower():
             raise arcpy.ExecuteError("Los correos electrónicos no coinciden.")
-        if not app_referer.lower().startswith(("https://", "http://")):
+        if app_referer and not app_referer.lower().startswith(("https://", "http://")):
             raise arcpy.ExecuteError("El origen de Experience Builder no es válido.")
+        mail = mail or mail2
         if os.path.splitext(kml_path)[1].lower() not in SUPPORTED_KML_EXTENSIONS:
             raise arcpy.ExecuteError("El archivo debe tener extensión .kml o .kmz.")
         if os.environ.get("SIAS_PUBLICATION_MODE") == "1":
